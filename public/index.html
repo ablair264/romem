@@ -7,7 +7,7 @@
   <!-- Google Fonts for futuristic, ultra-premium typography -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <!-- CSS Stylesheet -->
   <link rel="stylesheet" href="style.css">
   <!-- Lucide Icons for clean vectors -->
@@ -15,10 +15,7 @@
 </head>
 <body>
   
-  <div class="glass-bg-glows">
-    <div class="glow-orb orb-1"></div>
-    <div class="glow-orb orb-2"></div>
-  </div>
+  <div class="app-bg-mesh"></div>
 
   <main class="app-container">
     <!-- HEADER BAR -->
@@ -47,21 +44,21 @@
 
     <!-- METRICS GRID -->
     <section class="metrics-grid">
-      <div class="metric-card glass-card">
+      <div class="metric-card glass-card stagger-1">
         <div class="metric-icon val-indigo"><i data-lucide="layers"></i></div>
         <div class="metric-data">
           <span class="metric-value" id="stat-memories">0</span>
           <span class="metric-label">Memory Items Stored</span>
         </div>
       </div>
-      <div class="metric-card glass-card">
+      <div class="metric-card glass-card stagger-2">
         <div class="metric-icon val-violet"><i data-lucide="tag"></i></div>
         <div class="metric-data">
           <span class="metric-value" id="stat-categories">0</span>
           <span class="metric-label">Active Categories</span>
         </div>
       </div>
-      <div class="metric-card glass-card">
+      <div class="metric-card glass-card stagger-3">
         <div class="metric-icon val-fuchsia"><i data-lucide="hash"></i></div>
         <div class="metric-data">
           <span class="metric-value" id="stat-tags">0</span>
@@ -83,6 +80,9 @@
           <div class="input-glow-group">
             <i data-lucide="search" class="input-icon"></i>
             <input type="text" id="search-input" placeholder="Search facts, tags, or categories...">
+            <button type="button" class="search-clear-btn" id="search-clear-btn" aria-label="Clear search" style="display:none">
+              <i data-lucide="x"></i>
+            </button>
           </div>
 
           <div class="filter-section">
@@ -126,7 +126,7 @@
 
             <div class="form-group">
               <label for="new-tags">Tags <span class="label-helper">(separated by commas)</span></label>
-              <input type="text" id="new-tags" placeholder="e.g. css, fonts, layout">
+              <input type="text" id="new-tags" placeholder="e.g. css, fonts, layout" list="tags-datalist" autocomplete="off">
             </div>
 
             <button type="submit" class="btn-primary">
@@ -248,7 +248,7 @@
 
         <div class="form-group">
           <label for="edit-tags">Tags <span class="label-helper">(separated by commas)</span></label>
-          <input type="text" id="edit-tags">
+          <input type="text" id="edit-tags" list="tags-datalist" autocomplete="off">
         </div>
 
         <footer class="modal-footer">
@@ -264,6 +264,8 @@
     <i data-lucide="info" id="toast-icon"></i>
     <span id="toast-message">Database successfully synced!</span>
   </div>
+
+  <datalist id="tags-datalist"></datalist>
 
   <!-- App Script -->
   <script src="app.js"></script>
