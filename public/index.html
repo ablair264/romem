@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project Memory Center</title>
+  <!-- Google Fonts for futuristic, ultra-premium typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- CSS Stylesheet -->
+  <link rel="stylesheet" href="style.css">
+  <!-- Lucide Icons for clean vectors -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+  
+  <div class="glass-bg-glows">
+    <div class="glow-orb orb-1"></div>
+    <div class="glow-orb orb-2"></div>
+  </div>
+
+  <main class="app-container">
+    <!-- HEADER BAR -->
+    <header class="app-header">
+      <div class="header-logo-section">
+        <div class="logo-icon-container">
+          <i data-lucide="brain-circuit"></i>
+        </div>
+        <div class="title-meta">
+          <h1>PROJECT MEMORY CENTER</h1>
+          <p class="subtitle">Isolated local knowledge & rules database for AI assistants</p>
+        </div>
+      </div>
+      
+      <div class="header-scope-section">
+        <span class="pulse-indicator"></span>
+        <div class="scope-info">
+          <div class="scope-badge">
+            <i data-lucide="folder-git-2"></i>
+            <span id="active-project-name">Loading...</span>
+          </div>
+          <span class="scope-path" id="active-project-path">Loading folder...</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- METRICS GRID -->
+    <section class="metrics-grid">
+      <div class="metric-card glass-card">
+        <div class="metric-icon val-indigo"><i data-lucide="layers"></i></div>
+        <div class="metric-data">
+          <span class="metric-value" id="stat-memories">0</span>
+          <span class="metric-label">Memory Items Stored</span>
+        </div>
+      </div>
+      <div class="metric-card glass-card">
+        <div class="metric-icon val-violet"><i data-lucide="tag"></i></div>
+        <div class="metric-data">
+          <span class="metric-value" id="stat-categories">0</span>
+          <span class="metric-label">Active Categories</span>
+        </div>
+      </div>
+      <div class="metric-card glass-card">
+        <div class="metric-icon val-fuchsia"><i data-lucide="hash"></i></div>
+        <div class="metric-data">
+          <span class="metric-value" id="stat-tags">0</span>
+          <span class="metric-label">Indexed Tags</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- BENTO GRID PANELS -->
+    <section class="main-dashboard-layout">
+      
+      <!-- LEFT SIDEBAR: FILTERS & QUICK ADD -->
+      <aside class="sidebar-panel">
+        
+        <!-- SEARCH & TAXONOMIES -->
+        <div class="glass-card search-filter-card">
+          <h3><i data-lucide="sliders-horizontal"></i> Filters & Search</h3>
+          
+          <div class="input-glow-group">
+            <i data-lucide="search" class="input-icon"></i>
+            <input type="text" id="search-input" placeholder="Search facts, tags, or categories...">
+          </div>
+
+          <div class="filter-section">
+            <h4 class="section-title">Categories</h4>
+            <div class="category-tabs" id="category-tabs-container">
+              <button class="cat-tab active" data-category="all">All Memories</button>
+              <!-- Dynamic tabs inject here -->
+            </div>
+          </div>
+
+          <div class="filter-section">
+            <h4 class="section-title">Popular Tags</h4>
+            <div class="tag-cloud" id="tag-cloud-container">
+              <!-- Dynamic tag cloud inject here -->
+            </div>
+          </div>
+        </div>
+
+        <!-- QUICK ADD MEMORY FORM -->
+        <div class="glass-card add-memory-card">
+          <h3><i data-lucide="plus-circle"></i> Store New Memory</h3>
+          <form id="add-memory-form" class="form-container">
+            <div class="form-group">
+              <label for="new-fact">Fact or Guideline</label>
+              <textarea id="new-fact" placeholder="e.g. 'We use Tailwind CSS with Outfit font pairings on all layouts'" required></textarea>
+            </div>
+            
+            <div class="form-row">
+              <div class="form-group">
+                <label for="new-category">Category</label>
+                <select id="new-category">
+                  <option value="general">General</option>
+                  <option value="architecture">Architecture</option>
+                  <option value="style-guide">Style Guide</option>
+                  <option value="database">Database</option>
+                  <option value="todo">TODO / Tasks</option>
+                  <option value="preference">Preference</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="new-tags">Tags <span class="label-helper">(separated by commas)</span></label>
+              <input type="text" id="new-tags" placeholder="e.g. css, fonts, layout">
+            </div>
+
+            <button type="submit" class="btn-primary">
+              <i data-lucide="check-circle-2"></i> Save Fact to Store
+            </button>
+          </form>
+        </div>
+
+      </aside>
+
+      <!-- RIGHT DASHBOARD: CONTEXT & MEMORIES GRID -->
+      <div class="dashboard-main-content">
+        
+        <!-- PROJECT CONTEXT EDITOR -->
+        <section class="glass-card context-editor-card">
+          <div class="card-header-actions">
+            <h3><i data-lucide="cog"></i> High-Level Project Context</h3>
+            <button id="save-context-btn" class="btn-secondary btn-save-indicator">
+              <i data-lucide="save"></i> Save Context changes
+            </button>
+          </div>
+
+          <div class="context-grid">
+            <!-- TECH STACK -->
+            <div class="context-box">
+              <div class="box-header">
+                <h4><i data-lucide="cpu"></i> Tech Stack</h4>
+                <span class="badge-helper">Press Enter to add</span>
+              </div>
+              <div class="badge-container" id="tech-badge-container">
+                <!-- Badges dynamically added here -->
+              </div>
+              <div class="badge-input-wrapper">
+                <input type="text" id="tech-stack-input" placeholder="Add technology (e.g. React)...">
+              </div>
+            </div>
+
+            <!-- KEY CODING RULES -->
+            <div class="context-box">
+              <div class="box-header">
+                <h4><i data-lucide="clipboard-list"></i> Key Rules & Guidelines</h4>
+              </div>
+              <ul class="editable-checklist" id="rules-checklist">
+                <!-- Dynamic rules load here -->
+              </ul>
+              <div class="checklist-add-wrapper">
+                <input type="text" id="rules-input" placeholder="Add new coding standard...">
+                <button type="button" id="add-rule-btn" class="btn-icon"><i data-lucide="plus"></i></button>
+              </div>
+            </div>
+
+            <!-- ARCHITECTURE NOTES -->
+            <div class="context-box">
+              <div class="box-header">
+                <h4><i data-lucide="git-branch"></i> Folder & Architecture Notes</h4>
+              </div>
+              <ul class="editable-checklist" id="architecture-checklist">
+                <!-- Dynamic notes load here -->
+              </ul>
+              <div class="checklist-add-wrapper">
+                <input type="text" id="architecture-input" placeholder="Add layout/folder structure note...">
+                <button type="button" id="add-architecture-btn" class="btn-icon"><i data-lucide="plus"></i></button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- MEMORIES VIEW & Bento GRID -->
+        <section class="memories-section">
+          <div class="memories-section-header">
+            <div class="section-title-group">
+              <h3><i data-lucide="database"></i> Stored Memory Blocks</h3>
+              <span class="active-filters-pill" id="filter-status-text">Showing all memories</span>
+            </div>
+          </div>
+
+          <div class="memories-bento-grid" id="memories-grid">
+            <!-- Dynamic cards inject here -->
+            <div class="empty-state" id="empty-state-view">
+              <i data-lucide="inbox"></i>
+              <p>No project memories recorded yet.</p>
+              <span>Add facts or guidelines in the sidebar to get started!</span>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </section>
+  </main>
+
+  <!-- EDIT MEMORY MODAL DIALOG -->
+  <div class="modal-overlay" id="edit-modal">
+    <div class="modal-card glass-card">
+      <header class="modal-header">
+        <h3><i data-lucide="edit-3"></i> Edit Memory Block</h3>
+        <button type="button" class="btn-close-modal" id="close-modal-btn"><i data-lucide="x"></i></button>
+      </header>
+      <form id="edit-memory-form" class="form-container">
+        <input type="hidden" id="edit-id">
+        
+        <div class="form-group">
+          <label for="edit-fact">Fact or Guideline</label>
+          <textarea id="edit-fact" required></textarea>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="edit-category">Category</label>
+            <select id="edit-category">
+              <option value="general">General</option>
+              <option value="architecture">Architecture</option>
+              <option value="style-guide">Style Guide</option>
+              <option value="database">Database</option>
+              <option value="todo">TODO / Tasks</option>
+              <option value="preference">Preference</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="edit-tags">Tags <span class="label-helper">(separated by commas)</span></label>
+          <input type="text" id="edit-tags">
+        </div>
+
+        <footer class="modal-footer">
+          <button type="button" class="btn-secondary" id="cancel-modal-btn">Cancel</button>
+          <button type="submit" class="btn-primary">Save Changes</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+
+  <!-- Custom Alert Toast -->
+  <div class="toast-notification" id="toast">
+    <i data-lucide="info" id="toast-icon"></i>
+    <span id="toast-message">Database successfully synced!</span>
+  </div>
+
+  <!-- App Script -->
+  <script src="app.js"></script>
+</body>
+</html>
