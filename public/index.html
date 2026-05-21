@@ -4,270 +4,327 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Project Memory Center</title>
-  <!-- Google Fonts for futuristic, ultra-premium typography -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <!-- CSS Stylesheet -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <!-- Lucide Icons for clean vectors -->
   <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 <body>
-  
-  <div class="app-bg-mesh"></div>
 
-  <main class="app-container">
-    <!-- HEADER BAR -->
-    <header class="app-header">
-      <div class="header-logo-section">
-        <div class="logo-icon-container">
-          <i data-lucide="brain-circuit"></i>
-        </div>
-        <div class="title-meta">
-          <h1>PROJECT MEMORY CENTER</h1>
-          <p class="subtitle">Isolated local knowledge & rules database for AI assistants</p>
+  <div class="app-shell">
+    <!-- ===== SIDEBAR ===== -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-logo"><i data-lucide="brain-circuit"></i></div>
+        <div class="sidebar-title">
+          <span class="sidebar-app-name">Memory Center</span>
+          <span class="sidebar-project" id="active-project-name">Loading…</span>
         </div>
       </div>
-      
-      <div class="header-scope-section">
-        <span class="pulse-indicator"></span>
-        <div class="scope-info">
-          <div class="scope-badge">
-            <i data-lucide="folder-git-2"></i>
-            <span id="active-project-name">Loading...</span>
-          </div>
-          <span class="scope-path" id="active-project-path">Loading folder...</span>
-        </div>
-      </div>
-    </header>
 
-    <!-- METRICS GRID -->
-    <section class="metrics-grid">
-      <div class="metric-card glass-card stagger-1">
-        <div class="metric-icon val-indigo"><i data-lucide="layers"></i></div>
-        <div class="metric-data">
-          <span class="metric-value" id="stat-memories">0</span>
-          <span class="metric-label">Memory Items Stored</span>
-        </div>
-      </div>
-      <div class="metric-card glass-card stagger-2">
-        <div class="metric-icon val-violet"><i data-lucide="tag"></i></div>
-        <div class="metric-data">
-          <span class="metric-value" id="stat-categories">0</span>
-          <span class="metric-label">Active Categories</span>
-        </div>
-      </div>
-      <div class="metric-card glass-card stagger-3">
-        <div class="metric-icon val-fuchsia"><i data-lucide="hash"></i></div>
-        <div class="metric-data">
-          <span class="metric-value" id="stat-tags">0</span>
-          <span class="metric-label">Indexed Tags</span>
-        </div>
-      </div>
-    </section>
+      <button type="button" class="sidebar-add-btn" id="open-add-modal-btn">
+        <i data-lucide="plus"></i><span>Add Memory</span>
+      </button>
 
-    <!-- BENTO GRID PANELS -->
-    <section class="main-dashboard-layout">
-      
-      <!-- LEFT SIDEBAR: FILTERS & QUICK ADD -->
-      <aside class="sidebar-panel">
-        
-        <!-- SEARCH & TAXONOMIES -->
-        <div class="glass-card search-filter-card">
-          <h3><i data-lucide="sliders-horizontal"></i> Filters & Search</h3>
-          
-          <div class="input-glow-group">
-            <i data-lucide="search" class="input-icon"></i>
-            <input type="text" id="search-input" placeholder="Search facts, tags, or categories...">
+      <div class="sidebar-scroll">
+        <nav class="sidebar-nav" id="sidebar-nav">
+          <!-- Dynamic category nav items rendered by JS -->
+        </nav>
+
+        <div class="sidebar-section-label">Project Documentation</div>
+        <nav class="sidebar-nav">
+          <button type="button" class="sidebar-nav-item doc-nav-btn" data-file="CLAUDE.md">
+            <i data-lucide="file-text"></i><span>CLAUDE.md</span>
+          </button>
+          <button type="button" class="sidebar-nav-item doc-nav-btn" data-file="AGENTS.md">
+            <i data-lucide="shield-alert"></i><span>AGENTS.md</span>
+          </button>
+          <button type="button" class="sidebar-nav-item doc-nav-btn" data-file="GEMINI.md">
+            <i data-lucide="sparkles"></i><span>GEMINI.md</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-tags" id="sidebar-tags-section">
+          <div class="sidebar-section-label">Popular Tags</div>
+          <div class="tag-cloud" id="tag-cloud-container"></div>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <button type="button" class="sidebar-footer-btn" id="open-settings-btn" title="Project Settings">
+          <i data-lucide="settings"></i><span>Settings</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- ===== MAIN CONTENT ===== -->
+    <main class="main-panel">
+      <header class="main-header">
+        <div class="header-left">
+          <h1 class="header-title" id="header-title">All Memories</h1>
+          <span class="header-count" id="filter-status-text">0 memories</span>
+        </div>
+        <div class="header-right">
+          <div class="search-group">
+            <i data-lucide="search" class="search-icon"></i>
+            <input type="text" id="search-input" placeholder="Search memories…" autocomplete="off">
             <button type="button" class="search-clear-btn" id="search-clear-btn" aria-label="Clear search" style="display:none">
               <i data-lucide="x"></i>
             </button>
           </div>
+          <select id="sort-select" class="sort-select">
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
+            <option value="category">Category</option>
+            <option value="alpha">A → Z</option>
+          </select>
+          <button type="button" class="header-action-btn" id="bulk-select-toggle" title="Select multiple">
+            <i data-lucide="check-square"></i>
+          </button>
+        </div>
+      </header>
 
-          <div class="filter-section">
-            <h4 class="section-title">Categories</h4>
-            <div class="category-tabs" id="category-tabs-container">
-              <button class="cat-tab active" data-category="all">All Memories</button>
-              <!-- Dynamic tabs inject here -->
-            </div>
-          </div>
-
-          <div class="filter-section">
-            <h4 class="section-title">Popular Tags</h4>
-            <div class="tag-cloud" id="tag-cloud-container">
-              <!-- Dynamic tag cloud inject here -->
-            </div>
+      <div class="content-area">
+        <div class="memory-grid" id="memories-grid">
+          <div class="empty-state" id="empty-state-view">
+            <div class="empty-icon"><i data-lucide="inbox"></i></div>
+            <p>No memories yet</p>
+            <span>Click <strong>"Add Memory"</strong> to get started</span>
           </div>
         </div>
 
-        <!-- QUICK ADD MEMORY FORM -->
-        <div class="glass-card add-memory-card">
-          <h3><i data-lucide="plus-circle"></i> Store New Memory</h3>
-          <form id="add-memory-form" class="form-container">
-            <div class="form-group">
-              <label for="new-fact">Fact or Guideline</label>
-              <textarea id="new-fact" placeholder="e.g. 'We use Tailwind CSS with Outfit font pairings on all layouts'" required></textarea>
+        <div class="md-editor-panel" id="md-editor-panel" style="display: none;">
+          <div class="md-editor-header">
+            <div class="editor-header-left">
+              <span class="file-badge"><i data-lucide="file-code"></i><span id="active-md-filename">CLAUDE.md</span></span>
+              <span class="md-status-indicator" id="md-status-indicator">
+                <i data-lucide="check-circle-2"></i><span>Saved</span>
+              </span>
+            </div>
+            <div class="editor-header-right">
+              <button type="button" class="btn-secondary" id="ai-optimize-btn" style="background:var(--accent-glow);border:1px solid rgba(20,241,189,0.3);color:var(--accent);">
+                <i data-lucide="brain"></i><span>AI Optimize</span>
+              </button>
+              <button type="button" class="btn-primary" id="save-md-btn">
+                <i data-lucide="save"></i><span>Save Rules</span>
+              </button>
+            </div>
+          </div>
+          
+          <div class="md-editor-body">
+            <!-- Left Pane: Editor -->
+            <div class="editor-pane">
+              <div class="pane-header">
+                <span><i data-lucide="edit-2"></i> RAW MARKDOWN</span>
+                <span class="pane-shortcut">Cmd/Ctrl + S to save</span>
+              </div>
+              <textarea id="md-textarea" class="md-textarea" placeholder="# Write markdown rules here..." spellcheck="false"></textarea>
             </div>
             
-            <div class="form-row">
-              <div class="form-group">
-                <label for="new-category">Category</label>
-                <select id="new-category">
-                  <option value="general">General</option>
-                  <option value="architecture">Architecture</option>
-                  <option value="style-guide">Style Guide</option>
-                  <option value="database">Database</option>
-                  <option value="todo">TODO / Tasks</option>
-                  <option value="preference">Preference</option>
-                </select>
+            <!-- Right Pane: Preview -->
+            <div class="preview-pane">
+              <div class="pane-header">
+                <span><i data-lucide="eye"></i> LIVE PREVIEW</span>
+              </div>
+              <div id="md-preview" class="md-preview"></div>
+            </div>
+          </div>
+
+          <!-- Sliding AI Agent Console Drawer inside the Editor View -->
+          <div class="ai-console-drawer" id="ai-console-drawer">
+            <div class="console-header">
+              <div class="console-title">
+                <i data-lucide="bot" class="ai-glow-icon"></i>
+                <div>
+                  <h4 style="margin:0;font-size:0.95rem;color:var(--text-primary);">Llama 3 AI Agent Console</h4>
+                  <span style="font-size:0.75rem;color:var(--text-secondary);">Select an action to optimize project rules</span>
+                </div>
+              </div>
+              <button type="button" class="console-close-btn" id="close-ai-console-btn"><i data-lucide="x"></i></button>
+            </div>
+            
+            <div class="console-body">
+              <div class="console-actions-bar">
+                <button type="button" class="console-act-btn" id="btn-ai-duplicates" title="Scan for duplicate memories">
+                  <i data-lucide="copy"></i><span>Scan Duplicates</span>
+                </button>
+                <button type="button" class="console-act-btn" id="btn-ai-prune" title="Prune contradictory / outdated guidelines">
+                  <i data-lucide="trash-2"></i><span>Drift &amp; Prune</span>
+                </button>
+                <button type="button" class="console-act-btn" id="btn-ai-classify" title="Auto-classify and tag all memories">
+                  <i data-lucide="tags"></i><span>Auto-Tag</span>
+                </button>
+                <button type="button" class="console-act-btn" id="btn-ai-sync" title="Synthesize memories into active rules">
+                  <i data-lucide="refresh-cw"></i><span>Sync Rules</span>
+                </button>
+              </div>
+              
+              <div class="console-log-area">
+                <div class="console-terminal" id="console-terminal">
+                  <span class="terminal-prompt">$ ready</span>
+                  <div id="terminal-content" class="terminal-content">
+                    Initialize connection to Llama 3 on Groq. Please select an AI action above.
+                  </div>
+                </div>
               </div>
             </div>
-
-            <div class="form-group">
-              <label for="new-tags">Tags <span class="label-helper">(separated by commas)</span></label>
-              <input type="text" id="new-tags" placeholder="e.g. css, fonts, layout" list="tags-datalist" autocomplete="off">
+            
+            <div class="console-footer" id="console-footer" style="display: none;">
+              <button type="button" class="btn-ghost" id="cancel-console-changes">Discard suggestions</button>
+              <button type="button" class="btn-primary" id="apply-console-changes"><i data-lucide="check"></i> Apply to Editor</button>
             </div>
-
-            <button type="submit" class="btn-primary">
-              <i data-lucide="check-circle-2"></i> Save Fact to Store
-            </button>
-          </form>
+          </div>
         </div>
-
-      </aside>
-
-      <!-- RIGHT DASHBOARD: CONTEXT & MEMORIES GRID -->
-      <div class="dashboard-main-content">
-        
-        <!-- PROJECT CONTEXT EDITOR -->
-        <section class="glass-card context-editor-card">
-          <div class="card-header-actions">
-            <h3><i data-lucide="cog"></i> High-Level Project Context</h3>
-            <button id="save-context-btn" class="btn-secondary btn-save-indicator">
-              <i data-lucide="save"></i> Save Context changes
-            </button>
-          </div>
-
-          <div class="context-grid">
-            <!-- TECH STACK -->
-            <div class="context-box">
-              <div class="box-header">
-                <h4><i data-lucide="cpu"></i> Tech Stack</h4>
-                <span class="badge-helper">Press Enter to add</span>
-              </div>
-              <div class="badge-container" id="tech-badge-container">
-                <!-- Badges dynamically added here -->
-              </div>
-              <div class="badge-input-wrapper">
-                <input type="text" id="tech-stack-input" placeholder="Add technology (e.g. React)...">
-              </div>
-            </div>
-
-            <!-- KEY CODING RULES -->
-            <div class="context-box">
-              <div class="box-header">
-                <h4><i data-lucide="clipboard-list"></i> Key Rules & Guidelines</h4>
-              </div>
-              <ul class="editable-checklist" id="rules-checklist">
-                <!-- Dynamic rules load here -->
-              </ul>
-              <div class="checklist-add-wrapper">
-                <input type="text" id="rules-input" placeholder="Add new coding standard...">
-                <button type="button" id="add-rule-btn" class="btn-icon"><i data-lucide="plus"></i></button>
-              </div>
-            </div>
-
-            <!-- ARCHITECTURE NOTES -->
-            <div class="context-box">
-              <div class="box-header">
-                <h4><i data-lucide="git-branch"></i> Folder & Architecture Notes</h4>
-              </div>
-              <ul class="editable-checklist" id="architecture-checklist">
-                <!-- Dynamic notes load here -->
-              </ul>
-              <div class="checklist-add-wrapper">
-                <input type="text" id="architecture-input" placeholder="Add layout/folder structure note...">
-                <button type="button" id="add-architecture-btn" class="btn-icon"><i data-lucide="plus"></i></button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- MEMORIES VIEW & Bento GRID -->
-        <section class="memories-section">
-          <div class="memories-section-header">
-            <div class="section-title-group">
-              <h3><i data-lucide="database"></i> Stored Memory Blocks</h3>
-              <span class="active-filters-pill" id="filter-status-text">Showing all memories</span>
-            </div>
-          </div>
-
-          <div class="memories-bento-grid" id="memories-grid">
-            <!-- Dynamic cards inject here -->
-            <div class="empty-state" id="empty-state-view">
-              <i data-lucide="inbox"></i>
-              <p>No project memories recorded yet.</p>
-              <span>Add facts or guidelines in the sidebar to get started!</span>
-            </div>
-          </div>
-        </section>
-
       </div>
-    </section>
-  </main>
+    </main>
+  </div>
 
-  <!-- EDIT MEMORY MODAL DIALOG -->
-  <div class="modal-overlay" id="edit-modal">
-    <div class="modal-card glass-card">
+  <!-- ===== CONTEXT / SETTINGS DRAWER ===== -->
+  <div class="drawer-overlay" id="drawer-overlay"></div>
+  <aside class="drawer" id="context-drawer">
+    <div class="drawer-header">
+      <h2><i data-lucide="settings"></i> Project Settings</h2>
+      <div class="drawer-header-right">
+        <div class="autosave-indicator" id="autosave-indicator">
+          <i data-lucide="check-circle-2" id="autosave-icon"></i>
+          <span id="autosave-text">Saved</span>
+        </div>
+        <button type="button" class="drawer-close-btn" id="close-drawer-btn"><i data-lucide="x"></i></button>
+      </div>
+    </div>
+    <div class="drawer-body">
+      <div class="drawer-info">
+        <span class="drawer-info-label">Project Path</span>
+        <code id="active-project-path">Loading…</code>
+      </div>
+
+      <div class="drawer-section">
+        <h3><i data-lucide="key-round"></i> API Credentials</h3>
+        <div style="margin-top:0.75rem;">
+          <label for="groq-api-key" class="drawer-field-label" style="font-size:0.75rem;color:var(--text-secondary);display:block;margin-bottom:0.25rem;">Groq API Key</label>
+          <input type="password" id="groq-api-key" class="drawer-input" placeholder="gsk_..." style="width:100%;">
+          <p class="drawer-section-hint" style="font-size:0.7rem;color:var(--text-muted);margin-top:0.25rem;line-height:1.2;">Saved securely in browser local storage. Used directly for Groq AI queries.</p>
+        </div>
+      </div>
+
+      <div class="drawer-section">
+        <h3><i data-lucide="cpu"></i> Tech Stack</h3>
+        <div class="badge-container" id="tech-badge-container"></div>
+        <input type="text" id="tech-stack-input" class="drawer-input" placeholder="Add technology (press Enter)…">
+      </div>
+
+      <div class="drawer-section">
+        <h3><i data-lucide="clipboard-list"></i> Key Rules &amp; Guidelines</h3>
+        <ul class="editable-list" id="rules-checklist"></ul>
+        <div class="drawer-input-row">
+          <input type="text" id="rules-input" class="drawer-input" placeholder="Add rule…">
+          <button type="button" id="add-rule-btn" class="drawer-add-btn"><i data-lucide="plus"></i></button>
+        </div>
+      </div>
+
+      <div class="drawer-section">
+        <h3><i data-lucide="git-branch"></i> Architecture Notes</h3>
+        <ul class="editable-list" id="architecture-checklist"></ul>
+        <div class="drawer-input-row">
+          <input type="text" id="architecture-input" class="drawer-input" placeholder="Add note…">
+          <button type="button" id="add-architecture-btn" class="drawer-add-btn"><i data-lucide="plus"></i></button>
+        </div>
+      </div>
+
+      <div class="drawer-section">
+        <h3><i data-lucide="layout-grid"></i> Memory Categories</h3>
+        <div class="category-chips-container" id="category-chips-container"></div>
+        <div class="drawer-input-row">
+          <input type="text" id="category-input" class="drawer-input" placeholder="Add category…">
+          <button type="button" id="add-category-btn" class="drawer-add-btn"><i data-lucide="plus"></i></button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ===== ADD MEMORY MODAL ===== -->
+  <div class="modal-overlay" id="add-modal">
+    <div class="modal-card">
       <header class="modal-header">
-        <h3><i data-lucide="edit-3"></i> Edit Memory Block</h3>
-        <button type="button" class="btn-close-modal" id="close-modal-btn"><i data-lucide="x"></i></button>
+        <h3><i data-lucide="plus-circle"></i> Add Memory</h3>
+        <button type="button" class="modal-close-btn" id="close-add-modal-btn"><i data-lucide="x"></i></button>
       </header>
-      <form id="edit-memory-form" class="form-container">
-        <input type="hidden" id="edit-id">
-        
+      <form id="add-memory-form" class="modal-form">
         <div class="form-group">
-          <label for="edit-fact">Fact or Guideline</label>
-          <textarea id="edit-fact" required></textarea>
+          <label for="new-fact">Fact or Guideline</label>
+          <textarea id="new-fact" placeholder="e.g. 'We use TypeScript strict mode across all projects'" required></textarea>
         </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="edit-category">Category</label>
-            <select id="edit-category">
-              <option value="general">General</option>
-              <option value="architecture">Architecture</option>
-              <option value="style-guide">Style Guide</option>
-              <option value="database">Database</option>
-              <option value="todo">TODO / Tasks</option>
-              <option value="preference">Preference</option>
-            </select>
-          </div>
-        </div>
-
         <div class="form-group">
-          <label for="edit-tags">Tags <span class="label-helper">(separated by commas)</span></label>
-          <input type="text" id="edit-tags" list="tags-datalist" autocomplete="off">
+          <label>Category</label>
+          <div id="mount-new-category"></div>
         </div>
-
-        <footer class="modal-footer">
-          <button type="button" class="btn-secondary" id="cancel-modal-btn">Cancel</button>
-          <button type="submit" class="btn-primary">Save Changes</button>
-        </footer>
+        <div class="form-group">
+          <label for="new-tags">Tags <span class="label-hint">(comma separated)</span></label>
+          <input type="text" id="new-tags" placeholder="e.g. typescript, config" list="tags-datalist" autocomplete="off">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-ghost" id="cancel-add-modal-btn">Cancel</button>
+          <button type="submit" class="btn-primary"><i data-lucide="check"></i> Save Memory</button>
+        </div>
       </form>
     </div>
   </div>
 
-  <!-- Custom Alert Toast -->
-  <div class="toast-notification" id="toast">
+  <!-- ===== EDIT MEMORY MODAL ===== -->
+  <div class="modal-overlay" id="edit-modal">
+    <div class="modal-card">
+      <header class="modal-header">
+        <h3><i data-lucide="edit-3"></i> Edit Memory</h3>
+        <button type="button" class="modal-close-btn" id="close-modal-btn"><i data-lucide="x"></i></button>
+      </header>
+      <form id="edit-memory-form" class="modal-form">
+        <input type="hidden" id="edit-id">
+        <div class="form-group">
+          <label for="edit-fact">Fact or Guideline</label>
+          <textarea id="edit-fact" required></textarea>
+        </div>
+        <div class="form-group">
+          <label>Category</label>
+          <div id="mount-edit-category"></div>
+        </div>
+        <div class="form-group">
+          <label for="edit-tags">Tags <span class="label-hint">(comma separated)</span></label>
+          <input type="text" id="edit-tags" list="tags-datalist" autocomplete="off">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-ghost" id="cancel-modal-btn">Cancel</button>
+          <button type="submit" class="btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== TOASTS ===== -->
+  <div class="toast" id="toast">
     <i data-lucide="info" id="toast-icon"></i>
-    <span id="toast-message">Database successfully synced!</span>
+    <span id="toast-message"></span>
+  </div>
+
+  <div class="undo-toast" id="undo-toast">
+    <div class="undo-row">
+      <span id="undo-toast-message">Deleted</span>
+      <button type="button" id="undo-toast-btn">Undo</button>
+    </div>
+    <div class="undo-bar"><div class="undo-fill" id="undo-progress-fill"></div></div>
+  </div>
+
+  <!-- ===== BULK TOOLBAR ===== -->
+  <div class="bulk-toolbar" id="bulk-toolbar">
+    <span class="bulk-count" id="bulk-count">0 selected</span>
+    <div class="bulk-actions">
+      <div id="mount-bulk-category" class="bulk-cat-mount"></div>
+      <button type="button" class="bulk-delete-btn" id="bulk-delete-btn"><i data-lucide="trash-2"></i> Delete</button>
+      <button type="button" class="btn-ghost" id="bulk-cancel-btn">Cancel</button>
+    </div>
   </div>
 
   <datalist id="tags-datalist"></datalist>
-
-  <!-- App Script -->
   <script src="app.js"></script>
 </body>
 </html>

@@ -14,6 +14,20 @@ function getProjectDir() {
   return path.resolve(process.cwd());
 }
 
+// Helper to resolve starting port dynamically
+function getStartingPort() {
+  const portArgIndex = process.argv.indexOf('--port');
+  if (portArgIndex !== -1 && process.argv[portArgIndex + 1]) {
+    const p = parseInt(process.argv[portArgIndex + 1], 10);
+    if (!isNaN(p)) return p;
+  }
+  if (process.env.PORT) {
+    const p = parseInt(process.env.PORT, 10);
+    if (!isNaN(p)) return p;
+  }
+  return 3000;
+}
+
 const projectDir = getProjectDir();
 const memoryDir = path.join(projectDir, '.mcp-memory');
 const memoryFile = path.join(memoryDir, 'project-memory.json');
@@ -248,6 +262,202 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 200, { success: true, project_context: db.project_context });
       }
 
+      // GET /api/project-mds - Load CLAUDE.md, AGENTS.md, GEMINI.md
+      if (pathname === '/api/project-mds' && req.method === 'GET') {
+        const fileNames = ['CLAUDE.md', 'AGENTS.md', 'GEMINI.md'];
+        const files = {};
+        for (const fileName of fileNames) {
+          const filePath = path.join(projectDir, fileName);
+          try {
+            const content = await fs.readFile(filePath, 'utf8');
+            files[fileName] = content;
+          } catch (err) {
+            files[fileName] = ''; // Return empty string if file doesn't exist
+          }
+        }
+        return sendJson(res, 200, { files });
+      }
+
+      // PUT /api/project-mds - Save CLAUDE.md, AGENTS.md, GEMINI.md
+      if (pathname === '/api/project-mds' && req.method === 'PUT') {
+        const body = await getRequestBody(req);
+        if (body.files) {
+          for (const [filename, content] of Object.entries(body.files)) {
+            if (['CLAUDE.md', 'AGENTS.md', 'GEMINI.md'].includes(filename)) {
+              const filePath = path.join(projectDir, filename);
+              await fs.writeFile(filePath, content || '', 'utf8');
+            }
+          }
+          return sendJson(res, 200, { success: true });
+        } else if (body.filename && body.content !== undefined) {
+          const { filename, content } = body;
+          if (['CLAUDE.md', 'AGENTS.md', 'GEMINI.md'].includes(filename)) {
+            const filePath = path.join(projectDir, filename);
+            await fs.writeFile(filePath, content || '', 'utf8');
+            return sendJson(res, 200, { success: true });
+          } else {
+            return sendJson(res, 400, { error: 'Invalid filename' });
+          }
+        }
+        return sendJson(res, 400, { error: 'Missing files or filename/content' });
+      }
+
+      // POST /api/ai/agent - Groq Llama 3 API router
+      if (pathname === '/api/ai/agent' && req.method === 'POST') {
+        const body = await getRequestBody(req);
+        const groqKey = req.headers['authorization']?.replace('Bearer ', '') || body.groqKey;
+
+        if (!groqKey) {
+          return sendJson(res, 401, { error: 'Missing Groq API Key. Please configure it in Settings.' });
+        }
+
+        const action = body.action;
+        const payload = body.payload || {};
+
+        let systemPrompt = '';
+        let userPrompt = '';
+
+        if (action === 'detect_duplicates') {
+          systemPrompt = `You are an expert AI database clean-up agent. Your task is to scan the project memories and identify exact or semantic duplicates (rules/facts that convey the same instruction, e.g., 'Use TypeScript strict mode' and 'Strict TS mode is enabled').
+Return a JSON object with a "duplicates" array, where each element is an object representing a duplicate group:
+{
+  "duplicates": [
+    {
+      "groupName": "Short descriptive name for the duplicate group",
+      "duplicateIds": ["mem_id1", "mem_id2"],
+      "mergeSuggestion": "Single, clear, unified pure guideline statement that incorporates both memories"
+    }
+  ]
+}
+Return ONLY valid JSON. Do not include markdown code block syntax (like \`\`\`json) in your raw response.`;
+          userPrompt = `Here is the list of project memories to scan for duplicates:\n${JSON.stringify(db.memories, null, 2)}`;
+        } else if (action === 'prune_obsolete') {
+          systemPrompt = `You are an expert project compliance agent. Your task is to scan the list of project memories and identify any contradictory, obsolete, or outdated rules (e.g. one memory says 'Use Tailwind CSS v3' and a newer one says 'Upgrade styling to Tailwind CSS v4').
+Return a JSON object with an "obsolete" array containing items representing rule drift or direct obsolescence:
+{
+  "obsolete": [
+    {
+      "activeId": "mem_id_of_newer_correct_rule",
+      "activeFact": "The content of the newer rule",
+      "obsoleteId": "mem_id_of_older_outdated_rule",
+      "obsoleteFact": "The content of the older rule",
+      "reason": "Detailed explanation of why the older rule is obsolete or contradicted by the newer rule"
+    }
+  ]
+}
+Return ONLY valid JSON. Do not include markdown code block syntax (like \`\`\`json) in your raw response.`;
+          userPrompt = `Here is the list of project memories to scan for obsolete or contradicted rules:\n${JSON.stringify(db.memories, null, 2)}`;
+        } else if (action === 'auto_classify') {
+          systemPrompt = `You are an expert memory organization agent. Analyze the provided project memories and suggest the most appropriate category (must be one of: ${JSON.stringify(db.project_context.categories)}) and highly specific tags for each memory to maintain organization.
+Return a JSON object with a "classifications" array:
+{
+  "classifications": [
+    {
+      "id": "mem_id",
+      "fact": "Fact content",
+      "suggestedCategory": "category_name",
+      "suggestedTags": ["tag1", "tag2"]
+    }
+  ]
+}
+Return ONLY valid JSON. Do not include markdown code block syntax.`;
+          userPrompt = `Here are the memories to analyze:\n${JSON.stringify(db.memories, null, 2)}`;
+        } else if (action === 'sync_markdown') {
+          const fileNames = ['CLAUDE.md', 'AGENTS.md', 'GEMINI.md'];
+          const files = {};
+          for (const fileName of fileNames) {
+            const filePath = path.join(projectDir, fileName);
+            try {
+              files[fileName] = await fs.readFile(filePath, 'utf8');
+            } catch (err) {
+              files[fileName] = '';
+            }
+          }
+
+          systemPrompt = `You are an expert developer workflow agent. Analyze the project memories and high-level context, and compare them with the current contents of the project's key rules files (CLAUDE.md, AGENTS.md, GEMINI.md). Propose precise updates and additions to these files to ensure they capture the latest developer memories and facts perfectly.
+Return a JSON object of this structure:
+{
+  "claudemd": {
+    "proposed": "Complete new content for CLAUDE.md with changes integrated"
+  },
+  "agentsmd": {
+    "proposed": "Complete new content for AGENTS.md with changes integrated"
+  },
+  "geminimd": {
+    "proposed": "Complete new content for GEMINI.md with changes integrated"
+  },
+  "explanation": "Brief markdown list explaining what rules were synced and why"
+}
+Return ONLY valid JSON. Do not include markdown code block wrapping in your raw response.`;
+          userPrompt = `Project Context:
+${JSON.stringify(db.project_context, null, 2)}
+
+Stored Project Memories:
+${JSON.stringify(db.memories, null, 2)}
+
+Current File Contents:
+- CLAUDE.md:
+${files['CLAUDE.md']}
+
+- AGENTS.md:
+${files['AGENTS.md']}
+
+- GEMINI.md:
+${files['GEMINI.md']}`;
+        } else {
+          return sendJson(res, 400, { error: 'Invalid AI Agent action requested' });
+        }
+
+        // Call Groq API
+        try {
+          const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${groqKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              model: 'llama-3.1-8b-instant',
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt }
+              ],
+              temperature: 0.1,
+              response_format: { type: 'json_object' }
+            })
+          });
+
+          if (!groqResponse.ok) {
+            const errText = await groqResponse.text();
+            throw new Error(`Groq API responded with status ${groqResponse.status}: ${errText}`);
+          }
+
+          const groqData = await groqResponse.json();
+          let completionText = groqData.choices?.[0]?.message?.content || '{}';
+          
+          // Double check: if it has markdown wrapper, clean it
+          completionText = completionText.trim();
+          if (completionText.startsWith('```json')) {
+            completionText = completionText.replace(/^```json/, '').replace(/```$/, '').trim();
+          } else if (completionText.startsWith('```')) {
+            completionText = completionText.replace(/^```/, '').replace(/```$/, '').trim();
+          }
+
+          let parsedResult;
+          try {
+            parsedResult = JSON.parse(completionText);
+          } catch (jsonErr) {
+            console.error('Failed to parse Groq completion as JSON:', completionText);
+            return sendJson(res, 500, { error: 'Failed to parse AI response as JSON', raw: completionText });
+          }
+
+          return sendJson(res, 200, parsedResult);
+        } catch (apiErr) {
+          console.error('[GUI Server] Groq Request Failed:', apiErr);
+          return sendJson(res, 502, { error: `AI service error: ${apiErr.message}` });
+        }
+      }
+
       // If no endpoint matched
       return sendJson(res, 404, { error: 'Endpoint not found' });
 
@@ -311,5 +521,5 @@ function startServer(port) {
   });
 }
 
-// Boot the server starting at 3000
-startServer(3000);
+// Boot the server using the resolved starting port
+startServer(getStartingPort());

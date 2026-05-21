@@ -1,0 +1,40 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /Users/blair/Desktop/Development/Romem/.codex/hooks/project-memory-hook.cjs",
+            "timeout": 5,
+            "statusMessage": "Loading project memory..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /Users/blair/Desktop/Development/Romem/.codex/hooks/project-memory-hook.cjs",
+            "timeout": 5,
+            "statusMessage": "Submitting project memory..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /Users/blair/Desktop/Development/Romem/.codex/hooks/project-memory-hook.cjs",
+            "timeout": 5,
+            "statusMessage": "Checking project memory..."
+          }
+        ]
+      }
+    ]
+  }
+}
