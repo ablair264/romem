@@ -2,7 +2,70 @@
   "project_context": {
     "tech_stack": [],
     "key_rules": [],
-    "architecture_notes": []
+    "architecture_notes": [],
+    "categories": [
+      "general",
+      "style-guide",
+      "architecture",
+      "todo",
+      "database"
+    ]
   },
-  "memories": []
+  "memories": [
+    {
+      "id": "mem_1779408868562_53skgndtw",
+      "fact": "Romem analysis on 2026-05-22 concluded the app should evolve from a flat JSON memory MCP plus static GUI into a structured write-behind memory system: agent hooks emit compact categorized task summaries, a local/hosted organizer agent proposes file/agent-md/skill/memory changes, and humans approve diffs before writes.",
+      "category": "architecture",
+      "tags": [
+        "romem",
+        "memory",
+        "hooks",
+        "mcp",
+        "agent"
+      ],
+      "created_at": "2026-05-22T00:14:28.562Z",
+      "updated_at": "2026-05-22T00:14:28.564Z"
+    },
+    {
+      "id": "mem_1779411140321_h1zb0lxp8",
+      "fact": "Implementation planning on 2026-05-22 locked two v1 defaults for Romem: keep the existing MCP/UI app intact and add Mastra as a separate package in the repo, and use Ollama on the VPS as the primary backend for the organizer model.",
+      "category": "architecture",
+      "tags": [
+        "mastra",
+        "ollama",
+        "vps",
+        "romem",
+        "architecture"
+      ],
+      "created_at": "2026-05-22T00:52:20.321Z",
+      "updated_at": "2026-05-22T00:52:20.321Z"
+    },
+    {
+      "id": "mem_1779411236678_b1yq4qdr8",
+      "fact": "Planning changed on 2026-05-22: Romem should be rebuilt as a Mastra-integrated application rather than adding Mastra as a separate sidecar package, and the existing frontend is treated as disposable in favor of a new product UI.",
+      "category": "architecture",
+      "tags": [
+        "mastra",
+        "frontend",
+        "rebuild",
+        "romem",
+        "architecture"
+      ],
+      "created_at": "2026-05-22T00:53:56.678Z",
+      "updated_at": "2026-05-22T00:53:56.678Z"
+    },
+    {
+      "id": "mem_1779411268371_vfzyv2xtr",
+      "fact": "...` extraction.\n7. Define the Claude and Gemini hook contract so all three agents emit the same payload shape.\n8. Add Ollama-backed model configuration in Mastra with env-driven host, model, timeout, and fallback behavior.\n9. Implement approval-safe apply logic:\n   - no agent file or skill file is rewritten without a staged diff and explicit approval record\n10. Replace the current Groq-specific AI route with Mastra-driven orchestration endpoints.\n11. Add tests for schema validation, import, proposal generation, approval apply, and hook payload parsing.\n\n## Gemini Bucket\n1. Rebuild the frontend as the real Romem product UI against the new Mastra-backed API, not as a polish pass on `public/*`.\n2. Design and implement the core screens:\n   - project overview\n   - memory explorer\n   - propo...",
+      "category": "database",
+      "tags": [
+        "hook",
+        "memory",
+        "mcp",
+        "codex"
+      ],
+      "created_at": "2026-05-22T00:54:28.369Z",
+      "updated_at": "2026-05-22T00:54:28.369Z"
+    }
+  ]
 }

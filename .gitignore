@@ -1,0 +1,11 @@
+dist
+node_modules
+.env
+.env.local
+.vite
+coverage
+romem.db
+.romem
+.next
+out
+

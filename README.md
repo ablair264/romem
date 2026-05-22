@@ -1,171 +1,179 @@
-# Project-Scoped Model Context Protocol (MCP) Memory Server
+# Romem
 
-A high-performance, local-first Model Context Protocol (MCP) server that provides **isolated, project-scoped, persistent memory** for AI development assistants including **Claude Code**, **Gemini**, and **Codex/Antigravity**.
+Romem is a Mastra-backed project memory workspace for Codex, Claude, and Gemini. It ingests structured task summaries, stages memory and documentation updates as proposals, and requires explicit approval before touching agent files or skills.
 
-By automatically leveraging the **Current Working Directory (CWD)** from which your AI assistant is launched, the server guarantees that all project memories, tech stacks, architectural guidelines, and rules remain strictly isolated to the project codebase itself. No manual configuration per-project is needed!
+## Runtime
 
----
+- Backend: Mastra + Express
+- Frontend: React + Vite
+- Storage: SQLite at `.romem/romem.db`
+- Model backend: Ollama over its OpenAI-compatible `/v1` API
+- Deployment target: Railway for the app, VPS-hosted Ollama for the organizer model
 
-## 🚀 Key Features
+## Core Flow
 
-*   **Zero-Config Scoping**: Automatically detects the active project using the current working directory of the calling AI client.
-*   **Highly Inspectable**: Stores all memories locally in `.mcp-memory/project-memory.json` inside your project root. It's clean, human-readable JSON.
-*   **Version Control Friendly**: Easily commit `.mcp-memory/project-memory.json` to Git to share coding conventions, stacks, and guidelines across your development team, or add it to `.gitignore` to keep it private.
-*   **Atomic Safe Storage**: Implements temporary-file write operations followed by atomic renames (`fs.rename`), completely eliminating the risk of database corruption during concurrent operations.
-*   **Comprehensive Tools**: Dedicated tools for atomic memory creation, phrase/tag search, updates, deletion, and high-level project summary templates.
+1. An agent hook submits a `task-summary` payload to Romem.
+2. Mastra runs `ingest -> inspect -> classify -> stage proposal`.
+3. Romem stores the task summary, memory entries, todos, and a staged proposal.
+4. You review the diff in the UI.
+5. Approval applies the staged operations to memory, `AGENTS.md`/`CLAUDE.md`/`GEMINI.md`, and project skills.
 
----
+## Task Summary Contract
 
-## 🛠️ Quick Start
-
-### 1. Initialize and Setup
-You can set up the server globally in your user configuration directories with a single automated command:
-
-```bash
-# Register the server globally in Claude Code (~/.claude.json) and Gemini (~/.gemini/settings.json)
-node setup.js
+```json
+{
+  "projectId": "string",
+  "agent": "codex|claude|gemini",
+  "taskId": "string",
+  "summary": "string",
+  "changes": ["string"],
+  "decisions": ["string"],
+  "gotchas": ["string"],
+  "todos": ["string"],
+  "docsImpact": ["string"],
+  "skillsImpact": ["string"],
+  "categories": ["string"],
+  "tags": ["string"]
+}
 ```
 
-### 2. Verify Server Installation
-Run our comprehensive integration test suite to verify that the server connects over standard JSON-RPC, parses schema tools, and successfully manages isolated databases:
+## API
+
+- `GET /api/health`
+- `GET /api/projects/:id/overview`
+- `GET /api/projects/:id/memories`
+- `GET /api/projects/:id/proposals`
+- `GET /api/projects/:id/todos`
+- `GET /api/projects/:id/task-summaries`
+- `GET /api/projects/:id/agent-files`
+- `GET /api/projects/:id/skills`
+- `POST /api/projects/:id/task-summaries`
+- `POST /api/proposals/:id/approve`
+- `POST /api/proposals/:id/reject`
+
+## Development
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Run the backend and frontend:
+
+```bash
+npm run dev
+```
+
+- UI: `http://localhost:5173`
+- API: `http://localhost:4111`
+
+Run tests:
 
 ```bash
 npm test
 ```
 
-### 3. Launch the Premium Web GUI Dashboard
-Browse, search, edit, and organize all project-scoped memories and high-level context guidelines inside a beautiful, local glassmorphic web dashboard:
+Build production assets:
 
 ```bash
-# Start the zero-dependency web interface
-npm run gui
+npm run build
 ```
 
-Once booted, open the dashboard at the logged URL (usually **`http://localhost:3000`**). The server automatically scans for available ports if `3000` is occupied, ensuring a smooth start.
+Start the production server:
+
+```bash
+npm start
+```
+
+## Environment
+
+See [.env.example](/Users/blair/Desktop/Development/Romem/.env.example).
+
+Key variables:
+
+- `PORT`: Railway will inject this
+- `ROMEM_PROJECT_ID`: logical project key, defaults to `romem`
+- `ROMEM_ROOT_DIR`: optional explicit repo root
+- `ROMEM_DB_PATH`: optional SQLite path override
+- `OLLAMA_BASE_URL`: e.g. `http://your-vps:11434`
+- `OLLAMA_MODEL`: e.g. `llama3.1:8b`
+- `OLLAMA_API_KEY`: optional, defaults to `ollama`
+- `ROMEM_SERVER_URL`: used by the Codex hook when posting summaries
+
+## Railway Deployment Guide
+
+Railway is the recommended host for Romem due to its seamless support for monorepo-like builds, automatic database creation, and excellent environment variable injection.
+
+### Practical Architecture
+
+To keep operations performant and highly available:
+- **Romem Application (Railway)**: Hosts the Next.js React frontend, Express API endpoints, and the lightweight SQLite metadata store (`.romem/romem.db`).
+- **LLM Model backend (VPS/Ollama)**: Ollama runs on your VPS or local machine, handling the resource-intensive organizer model inference. Railway communicates securely with Ollama via HTTPS/HTTP.
 
 ---
 
-## 🧰 Provided MCP Tools
+### Step 1: Secure & Configure Ollama on your VPS
 
-Once connected, your AI clients will have access to the following premium, atomic tools:
+1. Make sure Ollama is installed and running on your VPS:
+   ```bash
+   ollama run llama3.1:8b
+   ```
+2. By default, Ollama only listens on `127.0.0.1`. Update it to listen on `0.0.0.0` (all interfaces) or set up a reverse proxy (e.g. Nginx or Caddy) to expose port `11434` with basic auth/token security.
 
-| Tool Name | Parameters | Description |
+---
+
+### Step 2: Set Up Environment Variables on Railway
+
+Create a new service on Railway from your Romem Git repository, and define the following variables under **Variables**:
+
+| Variable | Description | Example |
 | :--- | :--- | :--- |
-| **`add_memory`** | `fact` (str, req), `category` (str), `tags` (array) | Adds a persistent fact, preferences, or guideline to the active project database. |
-| **`search_memories`** | `query` (str, req), `category` (str) | Searches memories, categories, and tags using keyword matching. |
-| **`list_memories`** | `category` (str) | Lists all memories stored for the active project, with optional category filtering. |
-| **`update_memory`** | `id` (str, req), `fact` (str, req), `category` (str), `tags` (array) | Updates an existing memory item by its unique ID. |
-| **`delete_memory`** | `id` (str, req) | Permanently deletes a memory item by ID. |
-| **`get_project_context`** | None | Retrieves the high-level project summary context (Tech stack, standards, rules). |
-| **`update_project_context`**| `tech_stack` (array), `key_rules` (array), `architecture_notes` (array) | Updates the core technical summary context for the active project. |
+| `ROMEM_PROJECT_ID` | Logical project namespace (e.g., `romem` or project slug) | `romem` |
+| `OLLAMA_BASE_URL` | Endpoint of your VPS Ollama instance | `https://ollama.yourvps.com` or `http://192.168.1.100:11434` |
+| `OLLAMA_MODEL` | The LLM model to use for proposal drafting | `llama3.1:8b` |
+| `OLLAMA_API_KEY` | (Optional) API key for authenticated Ollama reverse proxies | `your-secure-token` |
+| `ROMEM_SERVER_URL` | Public production URL of your Romem console on Railway | `https://romem.up.railway.app` |
+
+*Note: Railway automatically injects the standard `PORT` variable. Romem's Express backend automatically listens on `process.env.PORT`.*
 
 ---
 
-## 🖥️ Client Configuration Reference
+### Step 3: Triggering Deployments
 
-If you prefer manual configuration, or want to understand what configurations are created, refer to the guides below:
-
-### 1. Claude Code (CLI)
-Claude Code loads its configurations globally from `~/.claude.json` or locally from a project's `.mcp.json`.
-
-**Global User Settings (`~/.claude.json`)**:
-```json
-{
-  "mcpServers": {
-    "project-memory": {
-      "command": "node",
-      "args": ["/home/alastair/Romem/index.js"]
-    }
-  }
-}
+Railway will automatically detect your `package.json` and the `railway.json` configuration file, run:
+```bash
+npm run build
 ```
-
-### 2. Gemini (Code Assist & CLI)
-Gemini tools look for MCP server configurations in `~/.gemini/settings.json` (global) or `.gemini/settings.json` (project root).
-
-**Global User Settings (`~/.gemini/settings.json`)**:
-```json
-{
-  "mcpServers": {
-    "project-memory": {
-      "command": "node",
-      "args": ["/home/alastair/Romem/index.js"]
-    }
-  }
-}
+(which compiles both the Express server to `dist/server` and Next.js static client to `dist/client`), and then boot the server using:
+```bash
+npm start
 ```
-
-### 3. Codex & Antigravity
-For Codex, the server is launched in `stdio` mode using standard Node execution. When configuring custom tools or adding MCP servers in Codex:
-- **Server Command**: `node`
-- **Arguments**: `/home/alastair/Romem/index.js`
 
 ---
 
-## 🧠 Workflows & Prompt Engineering Patterns
+### Step 4: Connecting your AI Assistants (Codex / Claude / Gemini)
 
-To maximize the benefits of project-scoped memory, adopt these standard practices:
+To feed task summaries automatically to Romem from your terminal or IDE sessions, update your agent hooks (e.g., in `.codex/hooks.json` or pre-commit hooks) to point to your new Railway server URL:
 
-### A. Proactive Context Retrieval (CWD initialization)
-Create a `CLAUDE.md` or `DEVELOPER.md` file in the root of your project instructing the AI agent to search memory on startup:
-
-```markdown
-# Developer Guidelines
-
-At the start of every session:
-1. Call `get_project_context` to understand the tech stack, key rules, and architecture of this codebase.
-2. Call `list_memories` or `search_memories` with relevant terms to see past decisions and debugging guidelines.
-3. Whenever you make an architectural decision or fix a critical bug, use `add_memory` to capture the insight.
-```
-
-### B. Suggested Prompt Commands to Give Your Assistant
-
-*   *Stack Definition*: `"We are using Fastify and Neon PostgreSQL. Update our project context to reflect this so you don't forget."*
-*   *Adding preferences*: `"Remember that for this project, all utility functions must go inside src/utils and be fully tested."*
-*   *Memory Recall*: `"Search memories for any guidelines on how we handle user authentications or schemas."*
-*   *Removing Stale Info*: `"Delete memory with ID mem_xxxxxxx because we refactored that service."*
-
----
-
-## 📂 Storage Structure
-Within each project folder you work in, the database will be created in:
-```
-<your-project-root>/
-├── .mcp-memory/
-│   └── project-memory.json   <-- The isolated project database
-```
-
-**Database Schema Format (`project-memory.json`)**:
 ```json
 {
-  "project_context": {
-    "tech_stack": [
-      "Node.js",
-      "ESM",
-      "PostgreSQL"
-    ],
-    "key_rules": [
-      "Always write modular ES6 module imports",
-      "Keep functions pure and fully documented"
-    ],
-    "architecture_notes": [
-      "The main server entry point is index.js"
-    ]
-  },
-  "memories": [
-    {
-      "id": "mem_1716298374829",
-      "fact": "We use atomic writes to prevent project-memory.json corruption.",
-      "category": "architecture",
-      "tags": [
-        "fs",
-        "io",
-        "concurrency"
-      ],
-      "created_at": "2026-05-20T14:00:00.000Z",
-      "updated_at": "2026-05-20T14:00:00.000Z"
-    }
-  ]
+  "ROMEM_SERVER_URL": "https://romem.up.railway.app"
 }
 ```
-# romem
+
+When a task completes, the agent will send a POST request with the `task-summary` payload to your Railway endpoint. You can then review the staged memory proposals and code diffs instantly in your live console!
+
+
+## Legacy Import
+
+On first boot, if the new store is empty, Romem imports `.mcp-memory/project-memory.json` into SQLite and scans known agent docs and skill files into the new store.
+
+## Status
+
+The old `index.js` MCP server and `gui.js` remain in the repo as legacy commands:
+
+- `npm run legacy:mcp`
+- `npm run legacy:gui`
+
+They are no longer the primary runtime.

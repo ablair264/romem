@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: var(--bg-app);
+  --color-surface: var(--bg-surface);
+  --color-surface-hover: var(--bg-surface-hover);
+  --color-elevated: var(--bg-elevated);
+  --color-input: var(--bg-input);
+  --color-accent: var(--accent);
+  --color-accent-dim: var(--accent-dim);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-glow: var(--accent-glow);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-primary: var(--text-primary);
+  --color-secondary: var(--text-secondary);
+  --color-muted: var(--text-muted);
+  --border-color-subtle: var(--border-subtle);
+  --border-color-medium: var(--border-medium);
+  --border-color-accent: var(--border-accent);
+  --radius: var(--radius);
+}
+
+:root {
+  /* Cybernetic Abyss Theme - Bencium Adjusted */
+  --bg-app: #0c0f16;
+  --bg-sidebar: #0f1219;
+  --bg-surface: #121620;
+  --bg-surface-hover: #181d2a;
+  --bg-elevated: #1a1f2e;
+  --bg-input: #080a0f;
+  
+  /* Borders Over Shadows Strategy */
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-medium: rgba(255, 255, 255, 0.15);
+  --border-accent: rgba(99, 199, 214, 0.3);
+  
+  --text-primary: #e2e8f0;
+  --text-secondary: #8b95a5;
+  --text-muted: #4a5568;
+  
+  --accent: #5ab0b0;
+  --accent-dim: rgba(90, 176, 176, 0.1);
+  --accent-hover: rgba(90, 176, 176, 0.18);
+  --accent-glow: rgba(90, 176, 176, 0.08);
+  
+  /* Desaturated Semantics for Dark Mode */
+  --success: #2b9f76;
+  --warning: #d99a28;
+  --danger: #d95b5b;
+  
+  /* Global Radius */
+  --radius: 7px;
+}
+
+@layer base {
+  body {
+    background-color: var(--bg-app);
+    color: var(--text-primary);
+    font-family: var(--font-sans), system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer utilities {
+  .noise-bg {
+    position: relative;
+  }
+  .noise-bg::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 50;
+    opacity: 0.03;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  }
+
+  .text-gradient {
+    background-clip: text;
+    color: transparent;
+    background-image: linear-gradient(to right, var(--text-primary), var(--text-secondary));
+  }
+}
