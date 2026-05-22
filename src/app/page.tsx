@@ -30,7 +30,8 @@ import {
   Trash,
   Eye,
   Settings,
-  Plug
+  Plug,
+  Menu
 } from "lucide-react";
 import { api } from "../lib/api";
 import type { AgentDocument, MemoryEntry, ProjectOverview, Proposal, SkillRecord, TaskSummaryRecord, Todo } from "../shared/schema";
@@ -104,6 +105,7 @@ export default function Page() {
   const [activeConnectTab, setActiveConnectTab] = useState<"claude_md" | "claude_code_hook" | "codex_hook" | "gemini_hook" | "curl">("claude_md");
   const [copiedSnippetId, setCopiedSnippetId] = useState<string | null>(null);
   const [isProjectSwitcherOpen, setIsProjectSwitcherOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Folder Navigation State
   const [activeCategoryFolder, setActiveCategoryFolder] = useState<string | null>(null);
@@ -546,17 +548,37 @@ export default function Page() {
 
   return (
     <div className="flex h-screen w-full bg-background text-primary overflow-hidden font-sans relative">
-      
+
+      {/* Mobile sidebar backdrop */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 bg-black/60 z-40 lg:hidden"
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
       {/* SIDEBAR */}
-      <aside className="w-64 flex flex-col flex-shrink-0 bg-sidebar border-r border-subtle">
+      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-64 flex flex-col flex-shrink-0 bg-sidebar border-r border-subtle transition-transform duration-200 lg:translate-x-0 ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="p-6 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-[7px] bg-gradient-to-br from-accent to-emerald-500 flex items-center justify-center border border-accent/20">
+          <div className="w-8 h-8 rounded-[7px] bg-gradient-to-br from-accent to-emerald-500 flex items-center justify-center border border-accent/20 shrink-0">
             <span className="text-[#0c0f16] font-bold text-lg leading-none">R</span>
           </div>
-          <div className="flex flex-col">
+          <div className="flex flex-col flex-1 min-w-0">
             <span className="text-[10px] font-mono uppercase tracking-widest text-muted">Mastra System</span>
             <h1 className="text-sm font-bold tracking-tight">Romem</h1>
           </div>
+          <button
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="lg:hidden w-7 h-7 flex items-center justify-center text-muted hover:text-primary transition-colors shrink-0"
+          >
+            <XCircle size={16} />
+          </button>
         </div>
 
         {/* Runtime Overview Card */}
@@ -597,7 +619,7 @@ export default function Page() {
                 </AnimatePresence>
                 
                 <button
-                  onClick={() => setActiveView(item.key)}
+                  onClick={() => { setActiveView(item.key); setIsMobileMenuOpen(false); }}
                   className={`w-full relative z-10 flex items-center gap-3 px-3 py-2.5 rounded-[7px] transition-all text-xs font-medium cursor-pointer
                     ${isActive ? "text-accent" : "text-secondary hover:text-primary hover:bg-surface-hover/40"}`}
                 >
@@ -663,26 +685,34 @@ export default function Page() {
       <main className="flex-1 flex flex-col min-w-0 bg-background relative z-10">
         
         {/* TOPBAR */}
-        <header className="h-16 flex-shrink-0 flex items-center justify-between px-8 border-b border-subtle bg-background/80 backdrop-blur-md z-20">
-          <div>
-            <div className="text-[10px] font-mono uppercase tracking-widest text-muted font-bold">Operations Console</div>
-            <h2 className="text-sm font-bold tracking-tight text-gradient">
-              {navItems.find((item) => item.key === activeView)?.label}
-            </h2>
+        <header className="h-16 flex-shrink-0 flex items-center justify-between px-4 sm:px-8 border-b border-subtle bg-background/80 backdrop-blur-md z-20">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="lg:hidden w-8 h-8 flex items-center justify-center text-secondary hover:text-primary transition-colors"
+            >
+              <Menu size={18} />
+            </button>
+            <div>
+              <div className="text-[10px] font-mono uppercase tracking-widest text-muted font-bold">Operations Console</div>
+              <h2 className="text-sm font-bold tracking-tight text-gradient">
+                {navItems.find((item) => item.key === activeView)?.label}
+              </h2>
+            </div>
           </div>
-          
-          <div className="flex items-center gap-4">
-            
+
+          <div className="flex items-center gap-2 sm:gap-4">
+
             {/* Custom Search Container */}
-            <div className="relative group">
+            <div className="relative group hidden sm:block">
               <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted group-focus-within:text-accent transition-colors" />
-              <input 
+              <input
                 id="global-search"
-                type="text" 
-                value={search} 
-                onChange={(e) => setSearch(e.target.value)} 
-                placeholder={`Search ${activeView === "overview" ? "activities" : activeView}...`} 
-                className="bg-input border border-subtle rounded-[7px] py-1.5 pl-9 pr-14 text-xs w-64 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent-dim/30 transition-all font-sans text-primary placeholder-muted"
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={`Search ${activeView === "overview" ? "activities" : activeView}...`}
+                className="bg-input border border-subtle rounded-[7px] py-1.5 pl-9 pr-14 text-xs w-48 lg:w-64 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent-dim/30 transition-all font-sans text-primary placeholder-muted"
               />
               <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] font-mono text-muted bg-surface-hover border border-subtle px-1.5 py-0.5 rounded leading-none pointer-events-none">
                 ⌘F
@@ -742,7 +772,7 @@ export default function Page() {
         </header>
 
         {/* CONTENT SCROLL AREA */}
-        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 custom-scrollbar">
           {error && (
             <div className="mb-6 p-4 bg-danger/10 border border-danger/25 rounded-[7px] text-danger text-xs flex items-start gap-3">
               <XCircle size={15} className="mt-0.5 shrink-0 text-danger" />
