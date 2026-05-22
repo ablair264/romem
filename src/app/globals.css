@@ -2,6 +2,7 @@
 
 @theme {
   --color-background: var(--bg-app);
+  --color-sidebar: var(--bg-sidebar);
   --color-surface: var(--bg-surface);
   --color-surface-hover: var(--bg-surface-hover);
   --color-elevated: var(--bg-elevated);
