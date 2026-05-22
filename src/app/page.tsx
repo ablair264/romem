@@ -106,6 +106,10 @@ export default function Page() {
   const [copiedSnippetId, setCopiedSnippetId] = useState<string | null>(null);
   const [isProjectSwitcherOpen, setIsProjectSwitcherOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isNewProjectFormVisible, setIsNewProjectFormVisible] = useState(false);
+  const [newProjectId, setNewProjectId] = useState("");
+  const [newProjectName, setNewProjectName] = useState("");
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
 
   // Folder Navigation State
   const [activeCategoryFolder, setActiveCategoryFolder] = useState<string | null>(null);
@@ -516,6 +520,25 @@ export default function Page() {
     }
   }
 
+  async function handleCreateProject(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newProjectId.trim()) return;
+    setIsCreatingProject(true);
+    try {
+      const project = await api.createProject(newProjectId.trim(), newProjectName.trim() || newProjectId.trim());
+      setIsProjectSwitcherOpen(false);
+      setIsNewProjectFormVisible(false);
+      setNewProjectId("");
+      setNewProjectName("");
+      setActiveView("overview");
+      void refreshAll(project.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create project.");
+    } finally {
+      setIsCreatingProject(false);
+    }
+  }
+
   function copySnippet(id: string, text: string) {
     navigator.clipboard.writeText(text);
     setCopiedSnippetId(id);
@@ -633,48 +656,90 @@ export default function Page() {
 
         <div className="p-4 mt-auto border-t border-subtle relative">
           <div className="text-[9px] uppercase tracking-wider text-muted font-bold mb-1">Active Workspace</div>
-          {projects.length > 1 ? (
-            <div className="relative">
-              <button
-                onClick={() => setIsProjectSwitcherOpen(!isProjectSwitcherOpen)}
-                className="w-full flex items-center justify-between text-xs font-medium text-secondary hover:text-accent transition-colors cursor-pointer"
-              >
-                <span className="truncate">{overview?.name ?? projectId}</span>
-                <ChevronRight size={12} className={`shrink-0 transition-transform ${isProjectSwitcherOpen ? "rotate-90" : ""}`} />
-              </button>
-              <AnimatePresence>
-                {isProjectSwitcherOpen && (
-                  <>
-                    <div className="fixed inset-0 z-30" onClick={() => setIsProjectSwitcherOpen(false)} />
-                    <motion.div
-                      initial={{ opacity: 0, y: 5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 5 }}
-                      transition={microTransition}
-                      className="absolute bottom-full left-0 right-0 mb-1 bg-surface border border-medium rounded-[7px] shadow-xl z-40 overflow-hidden"
-                    >
-                      {projects.map((p) => (
+          <div className="relative">
+            <button
+              onClick={() => { setIsProjectSwitcherOpen(!isProjectSwitcherOpen); setIsNewProjectFormVisible(false); }}
+              className="w-full flex items-center justify-between text-xs font-medium text-secondary hover:text-accent transition-colors cursor-pointer"
+            >
+              <span className="truncate">{overview?.name ?? projectId}</span>
+              <ChevronRight size={12} className={`shrink-0 transition-transform ${isProjectSwitcherOpen ? "rotate-90" : ""}`} />
+            </button>
+            <AnimatePresence>
+              {isProjectSwitcherOpen && (
+                <>
+                  <div className="fixed inset-0 z-30" onClick={() => { setIsProjectSwitcherOpen(false); setIsNewProjectFormVisible(false); }} />
+                  <motion.div
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 5 }}
+                    transition={microTransition}
+                    className="absolute bottom-full left-0 right-0 mb-1 bg-surface border border-medium rounded-[7px] shadow-xl z-40 overflow-hidden"
+                  >
+                    {projects.map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={() => {
+                          setIsProjectSwitcherOpen(false);
+                          setIsNewProjectFormVisible(false);
+                          setActiveView("overview");
+                          void refreshAll(p.id);
+                        }}
+                        className={`w-full text-left px-3 py-2.5 text-xs font-medium hover:bg-surface-hover/60 transition-colors cursor-pointer
+                          ${p.id === projectId ? "text-accent bg-accent-dim border-l-2 border-accent" : "text-secondary border-l-2 border-transparent"}`}
+                      >
+                        {p.name}
+                      </button>
+                    ))}
+                    <div className="border-t border-subtle/60">
+                      {isNewProjectFormVisible ? (
+                        <form onSubmit={handleCreateProject} className="p-3 space-y-2">
+                          <input
+                            autoFocus
+                            type="text"
+                            value={newProjectId}
+                            onChange={(e) => setNewProjectId(e.target.value)}
+                            placeholder="project-id (slug)"
+                            className="w-full bg-input border border-subtle focus:border-accent rounded-[5px] py-1.5 px-2.5 text-xs text-primary focus:outline-none placeholder-muted font-mono"
+                          />
+                          <input
+                            type="text"
+                            value={newProjectName}
+                            onChange={(e) => setNewProjectName(e.target.value)}
+                            placeholder="Display name (optional)"
+                            className="w-full bg-input border border-subtle focus:border-accent rounded-[5px] py-1.5 px-2.5 text-xs text-primary focus:outline-none placeholder-muted font-sans"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setIsNewProjectFormVisible(false)}
+                              className="flex-1 py-1.5 rounded-[5px] border border-subtle text-[10px] font-bold text-secondary hover:bg-surface-hover transition-colors cursor-pointer"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="submit"
+                              disabled={!newProjectId.trim() || isCreatingProject}
+                              className="flex-1 py-1.5 rounded-[5px] bg-accent disabled:opacity-50 text-[#0c0f16] text-[10px] font-bold transition-colors cursor-pointer"
+                            >
+                              {isCreatingProject ? "Creating..." : "Create"}
+                            </button>
+                          </div>
+                        </form>
+                      ) : (
                         <button
-                          key={p.id}
-                          onClick={() => {
-                            setIsProjectSwitcherOpen(false);
-                            setActiveView("overview");
-                            void refreshAll(p.id);
-                          }}
-                          className={`w-full text-left px-3 py-2.5 text-xs font-medium hover:bg-surface-hover/60 transition-colors cursor-pointer
-                            ${p.id === projectId ? "text-accent bg-accent-dim border-l-2 border-accent" : "text-secondary border-l-2 border-transparent"}`}
+                          onClick={() => setIsNewProjectFormVisible(true)}
+                          className="w-full text-left px-3 py-2.5 text-xs font-medium text-muted hover:text-accent hover:bg-surface-hover/60 transition-colors cursor-pointer flex items-center gap-2"
                         >
-                          {p.name}
+                          <span className="text-base leading-none font-light">+</span>
+                          <span>New Project</span>
                         </button>
-                      ))}
-                    </motion.div>
-                  </>
-                )}
-              </AnimatePresence>
-            </div>
-          ) : (
-            <div className="text-xs font-medium text-secondary truncate">{overview?.name ?? "..."}</div>
-          )}
+                      )}
+                    </div>
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
+          </div>
           <div className="text-[10px] font-mono text-muted truncate mt-1" title={overview?.rootPath}>
             {overview?.rootPath ?? "..."}
           </div>

@@ -37,6 +37,20 @@ export async function createRomemApp(rootDir: string) {
     res.json(store.listProjects());
   });
 
+  app.post("/api/projects", (req, res) => {
+    const { id, name } = req.body;
+    if (!id || typeof id !== "string" || !id.trim()) {
+      res.status(400).json({ error: "Project ID is required." });
+      return;
+    }
+    const projectId = id.trim().toLowerCase().replace(/\s+/g, "-");
+    const projectName = typeof name === "string" && name.trim() ? name.trim() : projectId;
+    store.ensureProject(projectId, projectName);
+    const projects = store.listProjects();
+    const project = projects.find((p) => p.id === projectId);
+    res.status(201).json(project);
+  });
+
   app.get("/api/settings", (_req, res) => {
     const dbSettings = store.getAllSettings();
     res.json({
