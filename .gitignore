@@ -8,4 +8,5 @@ romem.db
 .romem
 .next
 out
+*.tsbuildinfo
 
