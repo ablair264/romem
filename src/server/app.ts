@@ -33,8 +33,37 @@ export async function createRomemApp(rootDir: string) {
     });
   });
 
+  app.get("/api/projects", (_req, res) => {
+    res.json(store.listProjects());
+  });
+
+  app.get("/api/settings", (_req, res) => {
+    const dbSettings = store.getAllSettings();
+    res.json({
+      server_url: dbSettings.server_url ?? process.env.ROMEM_SERVER_URL ?? "",
+      ollama_base_url: dbSettings.ollama_base_url ?? process.env.OLLAMA_BASE_URL ?? "",
+      ollama_model: dbSettings.ollama_model ?? process.env.OLLAMA_MODEL ?? "llama3.1:8b",
+      ollama_api_key: dbSettings.ollama_api_key ?? process.env.OLLAMA_API_KEY ?? "ollama",
+    });
+  });
+
+  app.put("/api/settings", (req, res) => {
+    const keys = ["server_url", "ollama_base_url", "ollama_model", "ollama_api_key"] as const;
+    for (const key of keys) {
+      if (typeof req.body[key] === "string") {
+        store.setSetting(key, req.body[key]);
+      }
+    }
+    res.json(store.getAllSettings());
+  });
+
   app.get("/api/projects/:id/overview", (req, res) => {
-    res.json(store.getOverview(req.params.id));
+    const overview = store.getOverview(req.params.id);
+    if (!overview) {
+      res.status(404).json({ error: "Project not found." });
+      return;
+    }
+    res.json(overview);
   });
 
   app.get("/api/projects/:id/memories", (req, res) => {
@@ -208,6 +237,7 @@ export async function createRomemApp(rootDir: string) {
       return res.status(400).json({ error: parseResult.error.flatten() });
     }
 
+    store.ensureProject(req.params.id, req.params.id);
     const run = await ingestTaskSummaryWorkflow.createRun({ resourceId: req.params.id });
     const result = await run.start({ inputData: parseResult.data });
     if (result.status !== "success") {
@@ -244,6 +274,100 @@ export async function createRomemApp(rootDir: string) {
     store.setProposalStatus(proposal.id, "rejected", reason);
     store.updateTaskSummaryStatus(proposal.taskSummaryId, "rejected", proposal.id, reason);
     return res.json(store.getProposal(proposal.id));
+  });
+
+  app.get("/api/projects/:id/connect", (req, res) => {
+    const pid = req.params.id;
+    const serverUrl = store.getSetting('server_url') ?? process.env.ROMEM_SERVER_URL ?? "";
+    const endpoint = `${serverUrl}/api/projects/${pid}/task-summaries`;
+
+    const curlSnippet = `curl -sf -X POST '${endpoint}' \\
+  -H 'Content-Type: application/json' \\
+  -d '{
+    "agent": "claude",
+    "taskId": "my-task-id",
+    "summary": "Describe what was done",
+    "changes": [],
+    "decisions": [],
+    "gotchas": [],
+    "todos": [],
+    "docsImpact": [],
+    "skillsImpact": [],
+    "categories": ["general"],
+    "tags": []
+  }'`;
+
+    const claudeMdSnippet = `## Romem Memory Hook
+
+At the end of each coding task, run the following curl command to record the task summary into Romem:
+
+\`\`\`bash
+curl -sf -X POST '${endpoint}' \\
+  -H 'Content-Type: application/json' \\
+  -d '{
+    "agent": "claude",
+    "taskId": "<session or task id>",
+    "summary": "<what was done>",
+    "changes": [],
+    "decisions": [],
+    "gotchas": [],
+    "todos": [],
+    "docsImpact": [],
+    "skillsImpact": [],
+    "categories": ["general"],
+    "tags": []
+  }'
+\`\`\`
+
+Change the \`agent\` field to match your agent: \`claude\`, \`codex\`, or \`gemini\`.`;
+
+    const claudeCodeHookSnippet = JSON.stringify({
+      hooks: {
+        Stop: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: `python3 -c "import json,sys,subprocess; d=json.load(sys.stdin); subprocess.Popen(['curl','-sf','-X','POST','${endpoint}','-H','Content-Type: application/json','-d',json.dumps({'agent':'claude','taskId':d.get('session_id','unknown'),'summary':'Claude Code session completed','changes':[],'decisions':[],'gotchas':[],'todos':[],'docsImpact':[],'skillsImpact':[],'categories':['general'],'tags':[]})],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)" 2>/dev/null || true`,
+              },
+            ],
+          },
+        ],
+      },
+    }, null, 2);
+
+    const codexHookSnippet = JSON.stringify({
+      hooks: {
+        "post-exec": [
+          {
+            command: `curl -sf -X POST '${endpoint}' -H 'Content-Type: application/json' -d '{"agent":"codex","taskId":"unknown","summary":"Codex task completed","changes":[],"decisions":[],"gotchas":[],"todos":[],"docsImpact":[],"skillsImpact":[],"categories":["general"],"tags":[]}' > /dev/null 2>&1 || true`,
+          },
+        ],
+      },
+    }, null, 2);
+
+    const geminiHookSnippet = JSON.stringify({
+      hooks: {
+        afterTask: [
+          {
+            command: `curl -sf -X POST '${endpoint}' -H 'Content-Type: application/json' -d '{"agent":"gemini","taskId":"unknown","summary":"Gemini task completed","changes":[],"decisions":[],"gotchas":[],"todos":[],"docsImpact":[],"skillsImpact":[],"categories":["general"],"tags":[]}' > /dev/null 2>&1 || true`,
+          },
+        ],
+      },
+    }, null, 2);
+
+    res.json({
+      projectId: pid,
+      serverUrl,
+      endpoint,
+      snippets: {
+        curl: curlSnippet,
+        claude_md: claudeMdSnippet,
+        claude_code_hook: claudeCodeHookSnippet,
+        codex_hook: codexHookSnippet,
+        gemini_hook: geminiHookSnippet,
+      },
+    });
   });
 
   const clientDir = path.join(rootDir, "dist", "client");

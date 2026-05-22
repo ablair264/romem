@@ -65,5 +65,9 @@ export const api = {
     request<{ success: boolean; category: string }>(`/api/projects/${projectId}/categories/${categoryName}`, {
       method: "DELETE",
     }),
+  projects: () => request<Array<{ id: string; name: string; rootPath: string; createdAt: string }>>("/api/projects"),
+  settings: () => request<Record<string, string>>("/api/settings"),
+  updateSettings: (settings: Record<string, string>) => request<Record<string, string>>("/api/settings", { method: "PUT", body: JSON.stringify(settings) }),
+  connectSnippets: (projectId: string) => request<{ projectId: string; serverUrl: string; endpoint: string; snippets: Record<string, string> }>(`/api/projects/${projectId}/connect`),
 };
 

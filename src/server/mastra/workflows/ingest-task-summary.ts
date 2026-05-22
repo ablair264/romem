@@ -6,6 +6,9 @@ import type { RomemStore } from "../../store.js";
 import type { ProjectSnapshot } from "../../project-snapshot.js";
 import { collectProjectSnapshot } from "../../project-snapshot.js";
 import { buildFallbackDraft, buildProposalOperations } from "../../proposal-builder.js";
+import { createOrganizerTools } from "../tools.js";
+import { getOrganizerModel } from "../model.js";
+import { createOrganizerAgent } from "../agents/organizer-agent.js";
 
 const snapshotSchema = z.object({
   categories: z.array(z.string()),
@@ -35,9 +38,7 @@ const snapshotSchema = z.object({
 export function createIngestTaskSummaryWorkflow(
   store: RomemStore,
   rootDir: string,
-  organizerAgent: {
-    generate: (prompt: string, options: Record<string, unknown>) => Promise<{ object?: ProposalDraft }>;
-  } | null,
+  tools: ReturnType<typeof createOrganizerTools>,
 ) {
   const captureSummary = createStep({
     id: "capture-summary",
@@ -89,12 +90,19 @@ export function createIngestTaskSummaryWorkflow(
     execute: async ({ inputData }) => {
       const fallbackDraft = buildFallbackDraft(inputData.taskSummary, inputData.snapshot as ProjectSnapshot);
 
-      if (!organizerAgent) {
+      const model = getOrganizerModel({
+        baseURL: store.getSetting('ollama_base_url'),
+        model: store.getSetting('ollama_model'),
+        apiKey: store.getSetting('ollama_api_key'),
+      });
+      const agent = model ? createOrganizerAgent(model, tools) : null;
+
+      if (!agent) {
         return { ...inputData, draft: fallbackDraft, usedFallback: true };
       }
 
       try {
-        const response = await organizerAgent.generate(
+        const response = await agent.generate(
           [
             "Task summary:",
             JSON.stringify(inputData.taskSummary, null, 2),

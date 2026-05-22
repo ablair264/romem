@@ -28,15 +28,15 @@ import {
   Minimize2,
   FolderOpen,
   Trash,
-  Eye
+  Eye,
+  Settings,
+  Plug
 } from "lucide-react";
 import { api } from "../lib/api";
 import type { AgentDocument, MemoryEntry, ProjectOverview, Proposal, SkillRecord, TaskSummaryRecord, Todo } from "../shared/schema";
 
-type ViewKey = "overview" | "memories" | "proposals" | "todos" | "documents" | "skills" | "activity";
+type ViewKey = "overview" | "memories" | "proposals" | "todos" | "documents" | "skills" | "activity" | "settings" | "connect";
 type Inspectable = MemoryEntry | Proposal | Todo | AgentDocument | SkillRecord | TaskSummaryRecord | null;
-
-const projectId = "romem";
 
 const navItems: Array<{ key: ViewKey; label: string; icon: typeof FolderKanban }> = [
   { key: "overview", label: "Overview", icon: FolderKanban },
@@ -46,6 +46,8 @@ const navItems: Array<{ key: ViewKey; label: string; icon: typeof FolderKanban }
   { key: "documents", label: "Agent Files", icon: BookText },
   { key: "skills", label: "Skills", icon: Bot },
   { key: "activity", label: "Activity", icon: Inbox },
+  { key: "settings", label: "Settings", icon: Settings },
+  { key: "connect", label: "Connect", icon: Plug },
 ];
 
 function formatDate(value: string) {
@@ -76,6 +78,7 @@ const itemVariant = {
 } as const;
 
 export default function Page() {
+  const [projectId, setProjectId] = useState("romem");
   const [health, setHealth] = useState<{ hasOllama: boolean; runtime: string } | null>(null);
   const [overview, setOverview] = useState<ProjectOverview | null>(null);
   const [memories, setMemories] = useState<MemoryEntry[]>([]);
@@ -84,13 +87,23 @@ export default function Page() {
   const [documents, setDocuments] = useState<AgentDocument[]>([]);
   const [skills, setSkills] = useState<SkillRecord[]>([]);
   const [activity, setActivity] = useState<TaskSummaryRecord[]>([]);
-  
+
   const [search, setSearch] = useState("");
   const [activeView, setActiveView] = useState<ViewKey>("overview");
   const [selected, setSelected] = useState<Inspectable>(null);
   const [busyProposalId, setBusyProposalId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const [projects, setProjects] = useState<Array<{ id: string; name: string; rootPath: string; createdAt: string }>>([]);
+  const [appSettings, setAppSettings] = useState<Record<string, string>>({});
+  const [editSettings, setEditSettings] = useState<Record<string, string>>({});
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [settingsSaved, setSettingsSaved] = useState(false);
+  const [connectData, setConnectData] = useState<{ projectId: string; serverUrl: string; endpoint: string; snippets: Record<string, string> } | null>(null);
+  const [activeConnectTab, setActiveConnectTab] = useState<"claude_md" | "claude_code_hook" | "codex_hook" | "gemini_hook" | "curl">("claude_md");
+  const [copiedSnippetId, setCopiedSnippetId] = useState<string | null>(null);
+  const [isProjectSwitcherOpen, setIsProjectSwitcherOpen] = useState(false);
 
   // Folder Navigation State
   const [activeCategoryFolder, setActiveCategoryFolder] = useState<string | null>(null);
@@ -220,19 +233,23 @@ export default function Page() {
   }
 
 
-  async function refreshAll() {
+  async function refreshAll(pid = projectId) {
     setIsRefreshing(true);
+    setProjectId(pid);
+    setConnectData(null);
     try {
       setError(null);
-      const [healthData, overviewData, memoriesData, proposalsData, todosData, docsData, skillsData, activityData] = await Promise.all([
+      const [healthData, overviewData, memoriesData, proposalsData, todosData, docsData, skillsData, activityData, projectsData, settingsData] = await Promise.all([
         api.health(),
-        api.overview(projectId),
-        api.memories(projectId),
-        api.proposals(projectId),
-        api.todos(projectId),
-        api.agentFiles(projectId),
-        api.skills(projectId),
-        api.taskSummaries(projectId),
+        api.overview(pid).catch(() => null),
+        api.memories(pid),
+        api.proposals(pid),
+        api.todos(pid),
+        api.agentFiles(pid),
+        api.skills(pid),
+        api.taskSummaries(pid),
+        api.projects(),
+        api.settings(),
       ]);
       setHealth(healthData);
       setOverview(overviewData);
@@ -242,6 +259,9 @@ export default function Page() {
       setDocuments(docsData);
       setSkills(skillsData);
       setActivity(activityData);
+      setProjects(projectsData);
+      setAppSettings(settingsData);
+      setEditSettings(settingsData);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load Romem data.");
     } finally {
@@ -267,6 +287,13 @@ export default function Page() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
+
+  useEffect(() => {
+    if (activeView === "connect") {
+      setConnectData(null);
+      api.connectSnippets(projectId).then(setConnectData).catch(() => {});
+    }
+  }, [activeView, projectId]);
 
   // Global filters
   const needle = search.toLowerCase();
@@ -473,6 +500,26 @@ export default function Page() {
     }
   }
 
+  async function handleSaveSettings() {
+    setIsSavingSettings(true);
+    try {
+      const saved = await api.updateSettings(editSettings);
+      setAppSettings(saved);
+      setSettingsSaved(true);
+      setTimeout(() => setSettingsSaved(false), 2000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save settings.");
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
+  function copySnippet(id: string, text: string) {
+    navigator.clipboard.writeText(text);
+    setCopiedSnippetId(id);
+    setTimeout(() => setCopiedSnippetId(null), 2000);
+  }
+
   const handleEditorScroll = (e: React.UIEvent<HTMLTextAreaElement>) => {
     const target = e.currentTarget;
     const lineNumbers = document.getElementById("line-numbers-container");
@@ -562,9 +609,50 @@ export default function Page() {
           })}
         </nav>
 
-        <div className="p-4 mt-auto border-t border-subtle">
+        <div className="p-4 mt-auto border-t border-subtle relative">
           <div className="text-[9px] uppercase tracking-wider text-muted font-bold mb-1">Active Workspace</div>
-          <div className="text-xs font-medium text-secondary truncate">{overview?.name ?? "..."}</div>
+          {projects.length > 1 ? (
+            <div className="relative">
+              <button
+                onClick={() => setIsProjectSwitcherOpen(!isProjectSwitcherOpen)}
+                className="w-full flex items-center justify-between text-xs font-medium text-secondary hover:text-accent transition-colors cursor-pointer"
+              >
+                <span className="truncate">{overview?.name ?? projectId}</span>
+                <ChevronRight size={12} className={`shrink-0 transition-transform ${isProjectSwitcherOpen ? "rotate-90" : ""}`} />
+              </button>
+              <AnimatePresence>
+                {isProjectSwitcherOpen && (
+                  <>
+                    <div className="fixed inset-0 z-30" onClick={() => setIsProjectSwitcherOpen(false)} />
+                    <motion.div
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 5 }}
+                      transition={microTransition}
+                      className="absolute bottom-full left-0 right-0 mb-1 bg-surface border border-medium rounded-[7px] shadow-xl z-40 overflow-hidden"
+                    >
+                      {projects.map((p) => (
+                        <button
+                          key={p.id}
+                          onClick={() => {
+                            setIsProjectSwitcherOpen(false);
+                            setActiveView("overview");
+                            void refreshAll(p.id);
+                          }}
+                          className={`w-full text-left px-3 py-2.5 text-xs font-medium hover:bg-surface-hover/60 transition-colors cursor-pointer
+                            ${p.id === projectId ? "text-accent bg-accent-dim border-l-2 border-accent" : "text-secondary border-l-2 border-transparent"}`}
+                        >
+                          {p.name}
+                        </button>
+                      ))}
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
+          ) : (
+            <div className="text-xs font-medium text-secondary truncate">{overview?.name ?? "..."}</div>
+          )}
           <div className="text-[10px] font-mono text-muted truncate mt-1" title={overview?.rootPath}>
             {overview?.rootPath ?? "..."}
           </div>
@@ -1127,8 +1215,8 @@ export default function Page() {
                 <div className="bg-surface border border-subtle rounded-[7px] overflow-hidden">
                   <div className="divide-y divide-subtle/60">
                     {filteredActivity.map((task) => (
-                      <button 
-                        key={task.id} 
+                      <button
+                        key={task.id}
                         onClick={() => setSelected(task)}
                         className="w-full text-left px-6 py-4.5 hover:bg-surface-hover/40 transition-colors flex items-center justify-between group cursor-pointer"
                       >
@@ -1136,8 +1224,8 @@ export default function Page() {
                           <div className="font-semibold text-xs text-primary group-hover:text-accent transition-colors truncate">{task.payload.summary}</div>
                           <div className="text-[10px] text-muted mt-1.5 font-mono flex gap-4 items-center">
                             <span className={`px-1.5 py-0.5 rounded-[4px] text-[8px] uppercase tracking-wider font-semibold border
-                              ${task.agent === 'codex' ? 'bg-accent/10 text-accent border-accent/20' : 
-                                task.agent === 'claude' ? 'bg-warning/10 text-warning border-warning/20' : 
+                              ${task.agent === 'codex' ? 'bg-accent/10 text-accent border-accent/20' :
+                                task.agent === 'claude' ? 'bg-warning/10 text-warning border-warning/20' :
                                 'bg-success/10 text-success border-success/20'}`}
                             >
                               {task.agent}
@@ -1153,6 +1241,167 @@ export default function Page() {
                     <div className="py-16 text-center text-muted">
                       <HelpCircle size={28} className="mx-auto mb-2 opacity-30" />
                       <p className="text-xs font-mono">No tasks match search query.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* SETTINGS */}
+              {activeView === "settings" && (
+                <div className="space-y-6 max-w-2xl">
+                  <div className="p-4 bg-accent-dim border border-accent/20 rounded-[7px] text-xs text-accent font-medium">
+                    Settings are stored in the Romem database and override environment variables. Changes take effect immediately.
+                  </div>
+
+                  <div className="bg-surface border border-subtle rounded-[7px] overflow-hidden">
+                    <div className="px-6 py-4 border-b border-subtle bg-surface-hover/30">
+                      <h3 className="font-bold text-xs uppercase tracking-wider text-secondary">Server</h3>
+                    </div>
+                    <div className="p-6 space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-mono text-muted uppercase tracking-widest font-bold">Romem Server URL</label>
+                        <input
+                          type="text"
+                          value={editSettings.server_url ?? ""}
+                          onChange={(e) => setEditSettings((prev) => ({ ...prev, server_url: e.target.value }))}
+                          placeholder="https://your-romem-server.com"
+                          className="w-full bg-input border border-subtle focus:border-accent rounded-[7px] py-2 px-3 text-xs text-primary focus:outline-none transition-all placeholder-muted font-sans font-medium"
+                        />
+                        <p className="text-[10px] text-muted font-sans">Used for generating agent hook snippets in Connect.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-surface border border-subtle rounded-[7px] overflow-hidden">
+                    <div className="px-6 py-4 border-b border-subtle bg-surface-hover/30">
+                      <h3 className="font-bold text-xs uppercase tracking-wider text-secondary">Organizer Model</h3>
+                    </div>
+                    <div className="p-6 space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-mono text-muted uppercase tracking-widest font-bold">Ollama Base URL</label>
+                        <input
+                          type="text"
+                          value={editSettings.ollama_base_url ?? ""}
+                          onChange={(e) => setEditSettings((prev) => ({ ...prev, ollama_base_url: e.target.value }))}
+                          placeholder="http://localhost:11434"
+                          className="w-full bg-input border border-subtle focus:border-accent rounded-[7px] py-2 px-3 text-xs text-primary focus:outline-none transition-all placeholder-muted font-sans font-medium"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-mono text-muted uppercase tracking-widest font-bold">Model</label>
+                        <input
+                          type="text"
+                          value={editSettings.ollama_model ?? ""}
+                          onChange={(e) => setEditSettings((prev) => ({ ...prev, ollama_model: e.target.value }))}
+                          placeholder="llama3.1:8b"
+                          className="w-full bg-input border border-subtle focus:border-accent rounded-[7px] py-2 px-3 text-xs text-primary focus:outline-none transition-all placeholder-muted font-sans font-medium"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-mono text-muted uppercase tracking-widest font-bold">API Key</label>
+                        <input
+                          type="password"
+                          value={editSettings.ollama_api_key ?? ""}
+                          onChange={(e) => setEditSettings((prev) => ({ ...prev, ollama_api_key: e.target.value }))}
+                          placeholder="ollama"
+                          className="w-full bg-input border border-subtle focus:border-accent rounded-[7px] py-2 px-3 text-xs text-primary focus:outline-none transition-all placeholder-muted font-sans font-medium"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setEditSettings(appSettings)}
+                      className="h-8 px-4 rounded-[7px] border border-subtle hover:bg-surface-hover text-xs font-bold text-secondary transition-colors cursor-pointer"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveSettings}
+                      disabled={isSavingSettings}
+                      className="h-8 px-4.5 rounded-[7px] bg-accent hover:bg-accent/90 disabled:opacity-50 text-[#0c0f16] text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                    >
+                      {settingsSaved ? (
+                        <><Check size={12} className="stroke-[3]" /> Saved!</>
+                      ) : isSavingSettings ? (
+                        <><RefreshCw size={12} className="animate-spin" /> Saving...</>
+                      ) : (
+                        "Save Settings"
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* CONNECT */}
+              {activeView === "connect" && (
+                <div className="space-y-6 max-w-3xl">
+                  <div className="p-4 bg-surface border border-subtle rounded-[7px] text-xs text-secondary font-medium space-y-1">
+                    <p>Generate snippets to wire your AI agent into Romem. Make sure to set your <button onClick={() => setActiveView("settings")} className="text-accent underline cursor-pointer font-semibold">Server URL in Settings</button> first.</p>
+                  </div>
+
+                  {connectData === null ? (
+                    <div className="flex items-center justify-center py-16 text-muted">
+                      <RefreshCw size={18} className="animate-spin mr-3" />
+                      <span className="text-xs font-mono">Loading snippets...</span>
+                    </div>
+                  ) : (
+                    <div className="bg-surface border border-subtle rounded-[7px] overflow-hidden">
+                      {/* Tab Bar */}
+                      <div className="flex border-b border-subtle bg-surface-hover/30 overflow-x-auto">
+                        {(["claude_md", "claude_code_hook", "codex_hook", "gemini_hook", "curl"] as const).map((tab) => {
+                          const labels: Record<string, string> = {
+                            claude_md: "Prompt Snippet",
+                            claude_code_hook: "Claude Code",
+                            codex_hook: "Codex",
+                            gemini_hook: "Gemini",
+                            curl: "cURL Test",
+                          };
+                          return (
+                            <button
+                              key={tab}
+                              onClick={() => setActiveConnectTab(tab)}
+                              className={`px-4 py-3 text-xs font-bold whitespace-nowrap transition-colors cursor-pointer border-b-2
+                                ${activeConnectTab === tab
+                                  ? "text-accent border-accent bg-accent-dim/30"
+                                  : "text-secondary border-transparent hover:text-primary hover:bg-surface-hover/40"}`}
+                            >
+                              {labels[tab]}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Snippet label and copy button */}
+                      <div className="px-5 py-3 flex justify-between items-center border-b border-subtle/60">
+                        <span className="text-[10px] font-mono text-muted uppercase tracking-widest">
+                          {activeConnectTab === "claude_md" && "Add to CLAUDE.md / AGENTS.md / GEMINI.md"}
+                          {activeConnectTab === "claude_code_hook" && "Add to .claude/settings.json"}
+                          {activeConnectTab === "codex_hook" && "Add to .codex/hooks.json"}
+                          {activeConnectTab === "gemini_hook" && "Add to ~/.gemini/settings.json"}
+                          {activeConnectTab === "curl" && "Run in terminal to test"}
+                        </span>
+                        <button
+                          onClick={() => copySnippet(activeConnectTab, connectData.snippets[activeConnectTab] ?? "")}
+                          className="h-7 px-3 rounded-[7px] border border-subtle hover:border-medium bg-input flex items-center gap-1.5 text-[10px] font-bold text-secondary hover:text-primary transition-all cursor-pointer"
+                        >
+                          {copiedSnippetId === activeConnectTab ? (
+                            <><Check size={11} className="text-success stroke-[3]" /> Copied</>
+                          ) : (
+                            <><Copy size={11} /> Copy</>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Code block */}
+                      <div className="bg-[#06080c] p-5 overflow-auto custom-scrollbar max-h-[500px]">
+                        <pre className="font-mono text-[11px] text-secondary leading-relaxed whitespace-pre-wrap select-text">
+                          {connectData.snippets[activeConnectTab] ?? ""}
+                        </pre>
+                      </div>
                     </div>
                   )}
                 </div>

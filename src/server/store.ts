@@ -128,6 +128,11 @@ export class RomemStore {
         updated_at TEXT NOT NULL,
         UNIQUE(project_id, path)
       );
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
     `);
   }
 
@@ -488,8 +493,42 @@ export class RomemStore {
     };
   }
 
-  getOverview(projectId: string): ProjectOverview {
-    const project = this.db.prepare(`SELECT * FROM projects WHERE id = ?`).get(projectId) as Record<string, SqlValue>;
+  getSetting(key: string): string | null {
+    const row = this.db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key) as { value: string } | undefined;
+    return row ? row.value : null;
+  }
+
+  setSetting(key: string, value: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run(key, value, nowIso());
+  }
+
+  getAllSettings(): Record<string, string> {
+    const rows = this.db.prepare(`SELECT key, value FROM settings`).all() as { key: string; value: string }[];
+    const result: Record<string, string> = {};
+    for (const row of rows) {
+      result[row.key] = row.value;
+    }
+    return result;
+  }
+
+  listProjects(): Array<{ id: string; name: string; rootPath: string; createdAt: string }> {
+    const rows = this.db.prepare(`SELECT * FROM projects ORDER BY created_at DESC`).all() as Record<string, SqlValue>[];
+    return rows.map((row) => ({
+      id: String(row.id),
+      name: String(row.name),
+      rootPath: String(row.root_path),
+      createdAt: String(row.created_at),
+    }));
+  }
+
+  getOverview(projectId: string): ProjectOverview | null {
+    const project = this.db.prepare(`SELECT * FROM projects WHERE id = ?`).get(projectId) as Record<string, SqlValue> | undefined;
+    if (!project) return null;
     const stats = {
       memories: this.listMemories(projectId).length,
       proposals: this.listProposals(projectId).length,
