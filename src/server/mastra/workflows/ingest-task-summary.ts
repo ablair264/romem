@@ -154,10 +154,36 @@ export function createIngestTaskSummaryWorkflow(
 
         if (response.text) {
           try {
-            const jsonStart = response.text.indexOf("{");
-            const jsonEnd = response.text.lastIndexOf("}");
-            if (jsonStart !== -1 && jsonEnd !== -1) {
-              const jsonStr = response.text.substring(jsonStart, jsonEnd + 1);
+            let jsonText = response.text.trim();
+            const jsonStart = jsonText.indexOf("{");
+            if (jsonStart !== -1) {
+              jsonText = jsonText.substring(jsonStart);
+              // Find matching outer closing brace to avoid trailing noise truncation
+              let braceCount = 0;
+              let jsonEnd = -1;
+              for (let i = 0; i < jsonText.length; i++) {
+                if (jsonText[i] === "{") braceCount++;
+                else if (jsonText[i] === "}") {
+                  braceCount--;
+                  if (braceCount === 0) {
+                    jsonEnd = i;
+                    break;
+                  }
+                }
+              }
+              
+              let jsonStr = jsonEnd !== -1 ? jsonText.substring(0, jsonEnd + 1) : jsonText;
+              
+              // If LLM output got truncated or is missing a closing brace, automatically repair it
+              if (jsonEnd === -1 && braceCount > 0) {
+                jsonStr += "}".repeat(braceCount);
+              }
+              
+              // Clean up common LLM syntax anomalies (e.g. trailing commas inside arrays/objects)
+              jsonStr = jsonStr
+                .replace(/,\s*([\]}])/g, "$1") // trailing commas
+                .replace(/\\"/g, '"'); // double-escaped quotes from local LLM outputs
+                
               const parsed = JSON.parse(jsonStr);
               if (parsed && typeof parsed === "object") {
                 draft = {
@@ -174,7 +200,7 @@ export function createIngestTaskSummaryWorkflow(
               }
             }
           } catch (e) {
-            console.warn("Failed to parse agent text response as JSON", e);
+            console.warn("Failed to parse agent text response as JSON, falling back gracefully.", e);
           }
         }
 
