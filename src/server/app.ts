@@ -71,7 +71,7 @@ export async function createRomemApp(rootDir: string) {
     res.json(store.getAllSettings());
   });
 
-  app.get("/api/projects/:id/context.md", (req, res) => {
+  app.get("/api/projects/:id/digest.md", (req, res) => {
     const pid = req.params.id;
     const overview = store.getOverview(pid);
     if (!overview) {
@@ -80,6 +80,46 @@ export async function createRomemApp(rootDir: string) {
     }
     const memories = store.listMemories(pid);
     const openTodos = store.listTodos(pid).filter((t) => t.status === "open");
+    const serverUrl = store.getSetting("server_url") ?? process.env.ROMEM_SERVER_URL ?? "";
+    const byCategory = new Map<string, number>();
+    for (const m of memories) byCategory.set(m.category || "general", (byCategory.get(m.category || "general") ?? 0) + 1);
+    const lines: string[] = [
+      `# ${overview.name} — Memory Index`,
+      ``,
+      `${memories.length} facts across ${byCategory.size} categories. ${openTodos.length} open TODO${openTodos.length !== 1 ? "s" : ""}.`,
+      ``,
+      `## Categories`,
+    ];
+    for (const [cat, count] of [...byCategory.entries()].sort()) {
+      lines.push(`- **${cat}** — ${count} fact${count !== 1 ? "s" : ""}`);
+    }
+    if (openTodos.length > 0) {
+      lines.push(``, `## Open TODOs`);
+      for (const t of openTodos.slice(0, 15)) lines.push(`- [ ] ${t.title}`);
+      if (openTodos.length > 15) lines.push(`- … and ${openTodos.length - 15} more`);
+    }
+    lines.push(``, `---`, `Load facts: \`GET ${serverUrl}/api/projects/${pid}/context.md?category=<name>\``);
+    lines.push(`Search: \`GET ${serverUrl}/api/projects/${pid}/context.md?q=<keyword>\``);
+    res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store");
+    res.send(lines.join("\n"));
+  });
+
+  app.get("/api/projects/:id/context.md", (req, res) => {
+    const pid = req.params.id;
+    const overview = store.getOverview(pid);
+    if (!overview) {
+      res.status(404).type("text/plain").send("Project not found\n");
+      return;
+    }
+    const q = String(req.query.q ?? "").toLowerCase().trim();
+    const category = String(req.query.category ?? "").toLowerCase().trim();
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? "30"), 10) || 30, 1), 200);
+    let memories = store.listMemories(pid);
+    if (category) memories = memories.filter((m) => m.category.toLowerCase() === category);
+    if (q) memories = memories.filter((m) => `${m.fact} ${m.tags.join(" ")}`.toLowerCase().includes(q));
+    memories = memories.slice(0, limit);
+    const openTodos = !category && !q ? store.listTodos(pid).filter((t) => t.status === "open") : [];
     const byCategory = new Map<string, typeof memories>();
     for (const m of memories) {
       const cat = m.category || "general";
@@ -87,12 +127,14 @@ export async function createRomemApp(rootDir: string) {
       list.push(m);
       byCategory.set(cat, list);
     }
-    const lines: string[] = [
-      `# Project Context: ${overview.name}`,
-      ``,
-      `> Source: Romem | ${memories.length} memories | ${byCategory.size} categories | ${new Date().toUTCString()}`,
-      ``,
-    ];
+    const lines: string[] = [`# ${overview.name} — Context`];
+    if (category || q) {
+      const filters = [category && `category:${category}`, q && `q:"${q}"`].filter(Boolean).join(", ");
+      lines.push(``, `> ${memories.length} result${memories.length !== 1 ? "s" : ""} (${filters})`);
+    } else {
+      lines.push(``, `> ${memories.length} of ${store.listMemories(pid).length} facts (limit ${limit}) — use ?category= or ?q= to focus`);
+    }
+    lines.push(``);
     for (const [cat, items] of [...byCategory.entries()].sort()) {
       lines.push(`## ${cat}`);
       for (const m of items) {
@@ -103,9 +145,8 @@ export async function createRomemApp(rootDir: string) {
     }
     if (openTodos.length > 0) {
       lines.push(`## Open TODOs`);
-      for (const t of openTodos) {
-        lines.push(`- [ ] ${t.title}`);
-      }
+      for (const t of openTodos.slice(0, 10)) lines.push(`- [ ] ${t.title}`);
+      if (openTodos.length > 10) lines.push(`- … and ${openTodos.length - 10} more`);
       lines.push(``);
     }
     res.setHeader("Content-Type", "text/markdown; charset=utf-8");
@@ -380,41 +421,68 @@ export async function createRomemApp(rootDir: string) {
     "tags": []
   }'`;
 
+    const digestUrl = `${serverUrl}/api/projects/${pid}/digest.md`;
     const contextUrl = `${serverUrl}/api/projects/${pid}/context.md`;
 
-    const contextLoadSnippet = `# Load Romem Project Memory
+    const contextLoadSnippet = `# Romem Context Loading — Token-Efficient Pattern
 
-At the start of each session, fetch and read the project memory context:
-
+## Step 1: Always load at session start (tiny — ~20 lines)
 \`\`\`bash
-curl -sf '${contextUrl}'
+curl -sf '${digestUrl}'
+\`\`\`
+Returns: category names + memory counts + open TODOs. Use this to know what exists.
+
+## Step 2: Load specific facts only when relevant
+By category:
+\`\`\`bash
+curl -sf '${contextUrl}?category=architecture'
+curl -sf '${contextUrl}?category=style-guide'
 \`\`\`
 
-This returns all accumulated project decisions, architecture facts, style guidelines,
-and open TODOs as a structured markdown document. Read it before starting work.
+By keyword (searches fact text and tags):
+\`\`\`bash
+curl -sf '${contextUrl}?q=authentication'
+curl -sf '${contextUrl}?q=database'
+\`\`\`
 
----
+With a result limit (default 30, max 200):
+\`\`\`bash
+curl -sf '${contextUrl}?category=general&limit=10'
+\`\`\`
 
-Add this section to CLAUDE.md / AGENTS.md / GEMINI.md to make context loading automatic:
+## Add to CLAUDE.md / AGENTS.md / GEMINI.md
 
 \`\`\`markdown
-## Romem Context
-At the start of every session, run the following command and read its output:
+## Romem Memory
+
+At the start of each session, load the project memory index:
 \`\`\`bash
-curl -sf '${contextUrl}'
+curl -sf '${digestUrl}'
 \`\`\`
-This loads all project memories: architecture decisions, style rules, gotchas, and open TODOs.
+Then fetch specific categories or search for facts relevant to the current task:
+\`\`\`bash
+curl -sf '${contextUrl}?category=<name>'
+curl -sf '${contextUrl}?q=<keyword>'
+\`\`\`
 \`\`\``;
 
-    const claudeMdSnippet = `## Romem Context (Session Start)
+    const claudeMdSnippet = `## Romem Memory
 
-At the start of every session, load project memory by running:
-
+At the start of each session, load the project memory index (lightweight):
 \`\`\`bash
-curl -sf '${contextUrl}'
+curl -sf '${digestUrl}'
+\`\`\`
+This returns a map of available memory categories and open TODOs — not the facts themselves.
+
+When working on a specific area, load the relevant category:
+\`\`\`bash
+curl -sf '${contextUrl}?category=<category-name>'
 \`\`\`
 
-Read the full output — it contains architecture decisions, style rules, and open TODOs.
+Or search by keyword:
+\`\`\`bash
+curl -sf '${contextUrl}?q=<keyword>'
+\`\`\`
 
 ---
 
@@ -482,6 +550,7 @@ Change the \`agent\` field to match your agent: \`claude\`, \`codex\`, or \`gemi
       serverUrl,
       endpoint,
       contextUrl,
+      digestUrl,
       snippets: {
         context_load: contextLoadSnippet,
         curl: curlSnippet,
