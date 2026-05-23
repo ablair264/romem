@@ -101,7 +101,7 @@ export default function Page() {
   const [editSettings, setEditSettings] = useState<Record<string, string>>({});
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
-  const [connectData, setConnectData] = useState<{ projectId: string; serverUrl: string; endpoint: string; contextUrl: string; snippets: Record<string, string> } | null>(null);
+  const [connectData, setConnectData] = useState<{ projectId: string; serverUrl: string; endpoint: string; contextUrl: string; digestUrl: string; snippets: Record<string, string> } | null>(null);
   const [activeConnectTab, setActiveConnectTab] = useState<"context_load" | "claude_md" | "claude_code_hook" | "codex_hook" | "gemini_hook" | "curl">("context_load");
   const [isConsolidating, setIsConsolidating] = useState(false);
   const [consolidationMessage, setConsolidationMessage] = useState<string | null>(null);
@@ -1515,7 +1515,7 @@ export default function Page() {
                       {/* Snippet label and copy button */}
                       <div className="px-5 py-3 flex justify-between items-center border-b border-subtle/60">
                         <span className="text-[10px] font-mono text-muted uppercase tracking-widest">
-                          {activeConnectTab === "context_load" && "Add to CLAUDE.md / AGENTS.md / GEMINI.md"}
+                          {activeConnectTab === "context_load" && "Digest (start of session) + category / keyword fetch"}
                           {activeConnectTab === "claude_md" && "Add to CLAUDE.md / AGENTS.md / GEMINI.md"}
                           {activeConnectTab === "claude_code_hook" && "Add to .claude/settings.json"}
                           {activeConnectTab === "codex_hook" && "Add to .codex/hooks.json"}

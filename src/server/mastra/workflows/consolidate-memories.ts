@@ -39,7 +39,12 @@ export function createConsolidateMemoriesWorkflow(
     }),
     execute: async ({ inputData }) => {
       const { projectId } = inputData;
-      const memories = store.listMemories(projectId);
+      const allMemories = store.listMemories(projectId);
+      // Process at most 80 memories per run to keep the prompt bounded.
+      // Sort by most-recently-updated so fresh memories are always included.
+      const memories = allMemories
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+        .slice(0, 80);
 
       if (memories.length < 3) {
         return { projectId, draft: null, skipped: true };

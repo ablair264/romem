@@ -73,7 +73,7 @@ export const api = {
     }),
   settings: () => request<Record<string, string>>("/api/settings"),
   updateSettings: (settings: Record<string, string>) => request<Record<string, string>>("/api/settings", { method: "PUT", body: JSON.stringify(settings) }),
-  connectSnippets: (projectId: string) => request<{ projectId: string; serverUrl: string; endpoint: string; contextUrl: string; snippets: Record<string, string> }>(`/api/projects/${projectId}/connect`),
+  connectSnippets: (projectId: string) => request<{ projectId: string; serverUrl: string; endpoint: string; contextUrl: string; digestUrl: string; snippets: Record<string, string> }>(`/api/projects/${projectId}/connect`),
   consolidate: (projectId: string) =>
     request<{ proposalId: string | null; deletedCount: number; mergedCount: number; skipped: boolean }>(`/api/projects/${projectId}/consolidate`, {
       method: "POST",
