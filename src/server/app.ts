@@ -16,7 +16,7 @@ export async function createRomemApp(rootDir: string) {
     await importLegacyProjectMemory(rootDir, projectId, store);
   }
 
-  const { mastra, ingestTaskSummaryWorkflow } = createMastraRuntime(store, rootDir);
+  const { mastra, ingestTaskSummaryWorkflow, consolidateMemoriesWorkflow } = createMastraRuntime(store, rootDir);
 
   const app = express();
   app.use(express.json({ limit: "2mb" }));
@@ -69,6 +69,65 @@ export async function createRomemApp(rootDir: string) {
       }
     }
     res.json(store.getAllSettings());
+  });
+
+  app.get("/api/projects/:id/context.md", (req, res) => {
+    const pid = req.params.id;
+    const overview = store.getOverview(pid);
+    if (!overview) {
+      res.status(404).type("text/plain").send("Project not found\n");
+      return;
+    }
+    const memories = store.listMemories(pid);
+    const openTodos = store.listTodos(pid).filter((t) => t.status === "open");
+    const byCategory = new Map<string, typeof memories>();
+    for (const m of memories) {
+      const cat = m.category || "general";
+      const list = byCategory.get(cat) ?? [];
+      list.push(m);
+      byCategory.set(cat, list);
+    }
+    const lines: string[] = [
+      `# Project Context: ${overview.name}`,
+      ``,
+      `> Source: Romem | ${memories.length} memories | ${byCategory.size} categories | ${new Date().toUTCString()}`,
+      ``,
+    ];
+    for (const [cat, items] of [...byCategory.entries()].sort()) {
+      lines.push(`## ${cat}`);
+      for (const m of items) {
+        const tagStr = m.tags.length > 0 ? ` *(${m.tags.join(", ")})*` : "";
+        lines.push(`- ${m.fact}${tagStr}`);
+      }
+      lines.push(``);
+    }
+    if (openTodos.length > 0) {
+      lines.push(`## Open TODOs`);
+      for (const t of openTodos) {
+        lines.push(`- [ ] ${t.title}`);
+      }
+      lines.push(``);
+    }
+    res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store");
+    res.send(lines.join("\n"));
+  });
+
+  app.post("/api/projects/:id/consolidate", async (req, res) => {
+    const pid = req.params.id;
+    if (!store.projectExists(pid)) {
+      return res.status(404).json({ error: "Project not found." });
+    }
+    try {
+      const run = await consolidateMemoriesWorkflow.createRun({ resourceId: pid });
+      const result = await run.start({ inputData: { projectId: pid } });
+      if (result.status !== "success") {
+        return res.status(500).json({ error: "Consolidation workflow did not complete.", result });
+      }
+      return res.json(result.result);
+    } catch (error) {
+      return res.status(500).json({ error: error instanceof Error ? error.message : "Consolidation failed." });
+    }
   });
 
   app.get("/api/projects/:id/overview", (req, res) => {
@@ -272,6 +331,16 @@ export async function createRomemApp(rootDir: string) {
       await applyProposal(rootDir, store, proposal);
       store.setProposalStatus(proposal.id, "applied");
       store.updateTaskSummaryStatus(proposal.taskSummaryId, "applied", proposal.id, null);
+
+      const hasMemoryOps = proposal.operations.some((op) => op.type === "upsert_memory");
+      const isConsolidation = proposal.tags?.includes("consolidation");
+      if (hasMemoryOps && !isConsolidation) {
+        consolidateMemoriesWorkflow
+          .createRun({ resourceId: proposal.projectId })
+          .then((run) => run.start({ inputData: { projectId: proposal.projectId } }))
+          .catch(() => {});
+      }
+
       return res.json(store.getProposal(proposal.id));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown apply error";
@@ -311,9 +380,47 @@ export async function createRomemApp(rootDir: string) {
     "tags": []
   }'`;
 
-    const claudeMdSnippet = `## Romem Memory Hook
+    const contextUrl = `${serverUrl}/api/projects/${pid}/context.md`;
 
-At the end of each coding task, run the following curl command to record the task summary into Romem:
+    const contextLoadSnippet = `# Load Romem Project Memory
+
+At the start of each session, fetch and read the project memory context:
+
+\`\`\`bash
+curl -sf '${contextUrl}'
+\`\`\`
+
+This returns all accumulated project decisions, architecture facts, style guidelines,
+and open TODOs as a structured markdown document. Read it before starting work.
+
+---
+
+Add this section to CLAUDE.md / AGENTS.md / GEMINI.md to make context loading automatic:
+
+\`\`\`markdown
+## Romem Context
+At the start of every session, run the following command and read its output:
+\`\`\`bash
+curl -sf '${contextUrl}'
+\`\`\`
+This loads all project memories: architecture decisions, style rules, gotchas, and open TODOs.
+\`\`\``;
+
+    const claudeMdSnippet = `## Romem Context (Session Start)
+
+At the start of every session, load project memory by running:
+
+\`\`\`bash
+curl -sf '${contextUrl}'
+\`\`\`
+
+Read the full output — it contains architecture decisions, style rules, and open TODOs.
+
+---
+
+## Romem Memory Hook (Session End)
+
+At the end of each coding task, record the session summary:
 
 \`\`\`bash
 curl -sf -X POST '${endpoint}' \\
@@ -374,7 +481,9 @@ Change the \`agent\` field to match your agent: \`claude\`, \`codex\`, or \`gemi
       projectId: pid,
       serverUrl,
       endpoint,
+      contextUrl,
       snippets: {
+        context_load: contextLoadSnippet,
         curl: curlSnippet,
         claude_md: claudeMdSnippet,
         claude_code_hook: claudeCodeHookSnippet,
