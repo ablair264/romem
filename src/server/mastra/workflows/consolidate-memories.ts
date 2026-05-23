@@ -83,12 +83,19 @@ export function createConsolidateMemoriesWorkflow(
             `- If no changes are needed, return empty arrays — that is perfectly valid`,
             `- Never delete the last fact in a category`,
             ``,
-            `Instructions for structured output:`,
+            `Instructions for output:`,
             `- 'summary': A concise summary of the consolidation actions proposed.`,
             `- 'rationale': A detailed explanation of why these consolidations/deletions are necessary and how they clean up the project context. Do NOT leave this empty.`,
             ``,
             `CRITICAL FORMATTING REQUIREMENT:`,
-            `Your output must be a single, raw, valid JSON object matching the schema. DO NOT wrap the output in markdown code blocks like \`\`\`json ... \`\`\`. DO NOT include any conversational text.`,
+            `Your output must conform EXACTLY to the following JSON schema. You MUST output ONLY the raw, valid JSON object conforming exactly to this structure. DO NOT wrap the output in markdown code blocks like \`\`\`json ... \`\`\`. DO NOT include any introductory or concluding conversational text.`,
+            ``,
+            JSON.stringify({
+              summary: "string (required)",
+              rationale: "string (required)",
+              deletes: "Array of { id: string, reason: string }",
+              merges: "Array of { deleteIds: string[], newFact: string, category: string, tags: string[] }",
+            }, null, 2),
             ``,
             `Memory list:`,
             memoryList,
@@ -96,17 +103,38 @@ export function createConsolidateMemoriesWorkflow(
           {
             activeTools: [],
             maxSteps: 2,
-            structuredOutput: {
-              schema: ConsolidationDraftSchema,
-              jsonPromptInjection: true,
-            },
           },
         );
 
+        let draft = null;
+        let skipped = true;
+
+        if (response.text) {
+          try {
+            const jsonStart = response.text.indexOf("{");
+            const jsonEnd = response.text.lastIndexOf("}");
+            if (jsonStart !== -1 && jsonEnd !== -1) {
+              const jsonStr = response.text.substring(jsonStart, jsonEnd + 1);
+              const parsed = JSON.parse(jsonStr);
+              if (parsed && typeof parsed === "object") {
+                draft = {
+                  summary: typeof parsed.summary === "string" && parsed.summary.trim() ? parsed.summary : "Memory consolidation updates.",
+                  rationale: typeof parsed.rationale === "string" && parsed.rationale.trim() ? parsed.rationale : "Memory consolidation proposal.",
+                  deletes: Array.isArray(parsed.deletes) ? parsed.deletes : [],
+                  merges: Array.isArray(parsed.merges) ? parsed.merges : [],
+                };
+                skipped = false;
+              }
+            }
+          } catch (e) {
+            console.warn("Failed to parse consolidation response as JSON", e);
+          }
+        }
+
         return {
           projectId,
-          draft: response.object ?? null,
-          skipped: !response.object,
+          draft,
+          skipped,
         };
       } catch {
         return { projectId, draft: null, skipped: true };

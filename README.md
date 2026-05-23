@@ -134,8 +134,20 @@ Create a new service on Railway from your Romem Git repository, and define the f
 | `OLLAMA_MODEL` | The LLM model to use for proposal drafting | `llama3.1:8b` |
 | `OLLAMA_API_KEY` | (Optional) API key for authenticated Ollama reverse proxies | `your-secure-token` |
 | `ROMEM_SERVER_URL` | Public production URL of your Romem console on Railway | `https://romem.up.railway.app` |
+| `ROMEM_DB_PATH` | Path to persistent SQLite file on a mounted volume | `/db/romem.db` |
 
 *Note: Railway automatically injects the standard `PORT` variable. Romem's Express backend automatically listens on `process.env.PORT`.*
+
+---
+
+### Step 2.5: Configure Persistent SQLite Storage
+
+Because SQLite writes to a local file, any data saved will be **wiped on redeployment** unless stored on a persistent volume:
+
+1. In the Railway dashboard, click **+ New** at the top right and select **Volume**.
+2. Mount the volume to your Romem service and set the **Mount Path** to `/db`.
+3. In your Romem service's **Variables** tab, add `ROMEM_DB_PATH` set to `/db/romem.db` (as shown in Step 2 above).
+4. Trigger a redeployment. Your data will now reside on the persistent volume and survive all restarts and updates!
 
 ---
 

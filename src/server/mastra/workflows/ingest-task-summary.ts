@@ -106,7 +106,7 @@ export function createIngestTaskSummaryWorkflow(
           [
             "You are to review the following task summary and project snapshot, then generate a detailed proposal draft.",
             "",
-            "CRITICAL INSTRUCTIONS FOR YOUR STRUCTURED OUTPUT:",
+            "CRITICAL INSTRUCTIONS FOR YOUR OUTPUT:",
             "1. 'summary': Write a concise, high-level summary of the proposed changes.",
             "2. 'rationale': You MUST provide a clear, detailed rationale explaining why these memories, todos, and document/skill updates are proposed and how they benefit the project. Do NOT leave this field empty.",
             "3. 'memories': Add important facts, architecture decisions, or gotchas learned from the task summary. Keep them clear and factual.",
@@ -115,7 +115,18 @@ export function createIngestTaskSummaryWorkflow(
             "6. 'skills': Propose additions or modifications to skills if there are skills impacts.",
             "",
             "CRITICAL FORMATTING REQUIREMENT:",
-            "Your output must be a single, raw, valid JSON object matching the schema. DO NOT wrap the output in markdown code blocks like ```json ... ```. DO NOT include any conversational text.",
+            "Your output must conform EXACTLY to the following JSON schema. You MUST output ONLY the raw, valid JSON object conforming exactly to this structure. DO NOT wrap the output in markdown code blocks like ```json ... ```. DO NOT include any introductory or concluding conversational text.",
+            "",
+            JSON.stringify({
+              summary: "string (required)",
+              rationale: "string (required)",
+              categories: "string[]",
+              tags: "string[]",
+              memories: "Array of { fact: string, category: string, tags: string[] }",
+              todos: "string[]",
+              agentDocuments: "Array of { filename: string, reason: string, content: string }",
+              skills: "Array of { path: string, reason: string, content: string, action: 'create'|'update'|'delete' }",
+            }, null, 2),
             "",
             "Task summary:",
             JSON.stringify(inputData.taskSummary, null, 2),
@@ -135,17 +146,42 @@ export function createIngestTaskSummaryWorkflow(
           {
             activeTools: [],
             maxSteps: 2,
-            structuredOutput: {
-              schema: ProposalDraftSchema,
-              jsonPromptInjection: true,
-            },
           },
         );
 
+        let draft = fallbackDraft;
+        let usedFallback = true;
+
+        if (response.text) {
+          try {
+            const jsonStart = response.text.indexOf("{");
+            const jsonEnd = response.text.lastIndexOf("}");
+            if (jsonStart !== -1 && jsonEnd !== -1) {
+              const jsonStr = response.text.substring(jsonStart, jsonEnd + 1);
+              const parsed = JSON.parse(jsonStr);
+              if (parsed && typeof parsed === "object") {
+                draft = {
+                  summary: typeof parsed.summary === "string" && parsed.summary.trim() ? parsed.summary : fallbackDraft.summary,
+                  rationale: typeof parsed.rationale === "string" && parsed.rationale.trim() ? parsed.rationale : "Proposal generated based on the task summary changes.",
+                  categories: Array.isArray(parsed.categories) ? parsed.categories : fallbackDraft.categories,
+                  tags: Array.isArray(parsed.tags) ? parsed.tags : fallbackDraft.tags,
+                  memories: Array.isArray(parsed.memories) ? parsed.memories : fallbackDraft.memories,
+                  todos: Array.isArray(parsed.todos) ? parsed.todos : fallbackDraft.todos,
+                  agentDocuments: Array.isArray(parsed.agentDocuments) ? parsed.agentDocuments : fallbackDraft.agentDocuments,
+                  skills: Array.isArray(parsed.skills) ? parsed.skills : fallbackDraft.skills,
+                };
+                usedFallback = false;
+              }
+            }
+          } catch (e) {
+            console.warn("Failed to parse agent text response as JSON", e);
+          }
+        }
+
         return {
           ...inputData,
-          draft: response.object ?? fallbackDraft,
-          usedFallback: !response.object,
+          draft,
+          usedFallback,
         };
       } catch {
         return { ...inputData, draft: fallbackDraft, usedFallback: true };
