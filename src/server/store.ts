@@ -466,6 +466,24 @@ export class RomemStore {
     })();
   }
 
+  mergeCategories(projectId: string, sources: string[], target: string) {
+    this.db.transaction(() => {
+      this.addCategory(projectId, target);
+      const updateStmt = this.db.prepare(
+        `UPDATE memory_entries SET category = ?, updated_at = ? WHERE project_id = ? AND category = ?`,
+      );
+      const deleteStmt = this.db.prepare(
+        `DELETE FROM categories WHERE project_id = ? AND name = ?`,
+      );
+      const ts = nowIso();
+      for (const src of sources) {
+        if (src === target) continue;
+        updateStmt.run(target, ts, projectId, src);
+        deleteStmt.run(projectId, src);
+      }
+    })();
+  }
+
 
   getAgentDocument(id: string): AgentDocument | undefined {
     const row = this.db.prepare(`SELECT * FROM agent_documents WHERE id = ?`).get(id) as Record<string, any> | undefined;

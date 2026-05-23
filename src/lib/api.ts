@@ -65,6 +65,21 @@ export const api = {
     request<{ success: boolean; category: string }>(`/api/projects/${projectId}/categories/${categoryName}`, {
       method: "DELETE",
     }),
+  mergeCategories: (projectId: string, sources: string[], target: string) =>
+    request<{ success: boolean; target: string; mergedFrom: string[] }>(`/api/projects/${projectId}/categories/merge`, {
+      method: "POST",
+      body: JSON.stringify({ sources, target }),
+    }),
+  regenerateAgentFile: (projectId: string, filename: string) =>
+    request<{ filename: string; content: string }>(`/api/projects/${projectId}/agent-files/regenerate`, {
+      method: "POST",
+      body: JSON.stringify({ filename }),
+    }),
+  suggestSkills: (projectId: string) =>
+    request<{ suggestions: Array<{ title: string; path: string; rationale: string }> }>(`/api/projects/${projectId}/skills/suggest`, {
+      method: "POST",
+      body: "{}",
+    }),
   projects: () => request<Array<{ id: string; name: string; rootPath: string; createdAt: string }>>("/api/projects"),
   createProject: (id: string, name: string) =>
     request<{ id: string; name: string; rootPath: string; createdAt: string }>("/api/projects", {

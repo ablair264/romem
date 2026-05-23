@@ -31,22 +31,27 @@ import {
   Eye,
   Settings,
   Plug,
-  Menu
+  Menu,
+  Network
 } from "lucide-react";
 import { api } from "../lib/api";
+import { BrainMap } from "../components/BrainMap";
+import { AgentsView } from "../components/AgentsView";
+import { SkillsView } from "../components/SkillsView";
 import type { AgentDocument, MemoryEntry, ProjectOverview, Proposal, SkillRecord, TaskSummaryRecord, Todo } from "../shared/schema";
 
-type ViewKey = "overview" | "memories" | "proposals" | "todos" | "documents" | "skills" | "activity" | "settings" | "connect";
+type ViewKey = "brain" | "overview" | "memories" | "proposals" | "todos" | "documents" | "skills" | "activity" | "settings" | "connect";
 type Inspectable = MemoryEntry | Proposal | Todo | AgentDocument | SkillRecord | TaskSummaryRecord | null;
 
-const navItems: Array<{ key: ViewKey; label: string; icon: typeof FolderKanban }> = [
-  { key: "overview", label: "Overview", icon: FolderKanban },
+const navItems: Array<{ key: ViewKey; label: string; icon: typeof FolderKanban; badge?: "approvals" }> = [
+  { key: "brain", label: "Brain Map", icon: Network },
   { key: "memories", label: "Memories", icon: Database },
-  { key: "proposals", label: "Proposals", icon: FileDiff },
-  { key: "todos", label: "TODOs", icon: ClipboardList },
-  { key: "documents", label: "Agent Files", icon: BookText },
+  { key: "documents", label: "Agents", icon: BookText },
   { key: "skills", label: "Skills", icon: Bot },
+  { key: "proposals", label: "Review Queue", icon: FileDiff, badge: "approvals" },
+  { key: "todos", label: "TODOs", icon: ClipboardList },
   { key: "activity", label: "Activity", icon: Inbox },
+  { key: "overview", label: "Overview", icon: FolderKanban },
   { key: "settings", label: "Settings", icon: Settings },
   { key: "connect", label: "Connect", icon: Plug },
 ];
@@ -90,7 +95,7 @@ export default function Page() {
   const [activity, setActivity] = useState<TaskSummaryRecord[]>([]);
 
   const [search, setSearch] = useState("");
-  const [activeView, setActiveView] = useState<ViewKey>("overview");
+  const [activeView, setActiveView] = useState<ViewKey>("brain");
   const [selected, setSelected] = useState<Inspectable>(null);
   const [busyProposalId, setBusyProposalId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -117,6 +122,20 @@ export default function Page() {
   const [activeCategoryFolder, setActiveCategoryFolder] = useState<string | null>(null);
   const [isAddFolderOpen, setIsAddFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
+
+  // Agents view state
+  const CANONICAL_AGENTS = ["CLAUDE.md", "GEMINI.md", "AGENTS.md", "CODEX.md"] as const;
+  const [activeAgentTab, setActiveAgentTab] = useState<string>("CLAUDE.md");
+  const [agentDraft, setAgentDraft] = useState<string>("");
+  const [agentDraftDirty, setAgentDraftDirty] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [isSavingAgent, setIsSavingAgent] = useState(false);
+  const [regenPreview, setRegenPreview] = useState<string | null>(null);
+
+  // Review queue state
+  const [selectedProposalIds, setSelectedProposalIds] = useState<Set<string>>(new Set());
+  const [proposalStatusFilter, setProposalStatusFilter] = useState<"staged" | "applied" | "rejected" | "failed" | "all">("staged");
+  const [isBatchProcessing, setIsBatchProcessing] = useState(false);
 
   // Custom Controls State
   const [isSortOpen, setIsSortOpen] = useState(false);
@@ -315,8 +334,39 @@ export default function Page() {
 
 
   const filteredProposals = useMemo(() => {
-    return proposals.filter((p) => !needle || `${p.summary} ${p.rationale} ${p.status}`.toLowerCase().includes(needle));
-  }, [proposals, needle]);
+    return proposals.filter((p) => {
+      if (proposalStatusFilter !== "all" && p.status !== proposalStatusFilter) return false;
+      return !needle || `${p.summary} ${p.rationale} ${p.status}`.toLowerCase().includes(needle);
+    });
+  }, [proposals, needle, proposalStatusFilter]);
+
+  const proposalStatusCounts = useMemo(() => {
+    const counts = { staged: 0, applied: 0, rejected: 0, failed: 0, all: proposals.length };
+    for (const p of proposals) {
+      if (p.status in counts) (counts as Record<string, number>)[p.status]++;
+    }
+    return counts;
+  }, [proposals]);
+
+  function humanizeProposalTitle(p: Proposal): string {
+    const raw = p.summary || "";
+    // Strip "Staged updates for <agent> task <ID>" pattern → use rationale or first operation
+    const stagedPattern = /^staged updates for (claude|gemini|codex|agent) task /i;
+    if (stagedPattern.test(raw)) {
+      // Prefer first memory upsert content
+      const firstMemory = p.operations.find((op) => op.type === "upsert_memory");
+      if (firstMemory?.target) {
+        return firstMemory.target.length > 90 ? firstMemory.target.slice(0, 87) + "…" : firstMemory.target;
+      }
+      // Fallback to rationale first sentence
+      const sentence = p.rationale.split(/[.!?]/)[0]?.trim();
+      if (sentence && sentence.length > 6) {
+        return sentence.length > 90 ? sentence.slice(0, 87) + "…" : sentence;
+      }
+    }
+    // Sentence-case the raw title
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
+  }
 
   const filteredTodos = useMemo(() => {
     return todos.filter((t) => !needle || `${t.title} ${t.status}`.toLowerCase().includes(needle));
@@ -420,6 +470,99 @@ export default function Page() {
     window.addEventListener("keydown", handleSaveShortcut);
     return () => window.removeEventListener("keydown", handleSaveShortcut);
   }, [selected, editCodeContent]);
+
+  // Sync agent draft to current tab content when not dirty
+  useEffect(() => {
+    if (agentDraftDirty) return;
+    const doc = documents.find((d) => d.filename === activeAgentTab);
+    setAgentDraft(doc?.content ?? "");
+    setRegenPreview(null);
+  }, [activeAgentTab, documents, agentDraftDirty]);
+
+  // Auto-poll proposals every 30s for new staged work
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      void api.proposals(projectId).then((p) => setProposals(p)).catch(() => {});
+    }, 30000);
+    return () => window.clearInterval(id);
+  }, [projectId]);
+
+  async function handleRegenerateAgent() {
+    setIsRegenerating(true);
+    setError(null);
+    try {
+      const result = await api.regenerateAgentFile(projectId, activeAgentTab);
+      setRegenPreview(result.content);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Regenerate failed");
+    } finally {
+      setIsRegenerating(false);
+    }
+  }
+
+  async function handleSaveAgentDraft() {
+    const doc = documents.find((d) => d.filename === activeAgentTab);
+    const content = regenPreview ?? agentDraft;
+    if (!content.trim()) {
+      setError("Cannot save empty agent file.");
+      return;
+    }
+    setIsSavingAgent(true);
+    try {
+      if (doc) {
+        const updated = await api.updateAgentFile(projectId, doc.id, content);
+        setDocuments((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+      } else {
+        // No existing doc — create via task summary fallback path is overkill; just refresh after manual write
+        await fetch(`/api/projects/${projectId}/agent-files`, { method: "GET" });
+      }
+      setAgentDraftDirty(false);
+      setRegenPreview(null);
+      await refreshAll(projectId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setIsSavingAgent(false);
+    }
+  }
+
+  async function handleBatchApprove() {
+    setIsBatchProcessing(true);
+    setError(null);
+    const ids = Array.from(selectedProposalIds);
+    try {
+      for (const id of ids) {
+        try {
+          await api.approveProposal(id);
+        } catch (e) {
+          // continue with the rest
+        }
+      }
+      setSelectedProposalIds(new Set());
+      await refreshAll(projectId);
+    } finally {
+      setIsBatchProcessing(false);
+    }
+  }
+
+  async function handleBatchReject() {
+    setIsBatchProcessing(true);
+    setError(null);
+    const ids = Array.from(selectedProposalIds);
+    try {
+      for (const id of ids) {
+        try {
+          await api.rejectProposal(id, "Batch rejected from review queue");
+        } catch (e) {
+          // continue
+        }
+      }
+      setSelectedProposalIds(new Set());
+      await refreshAll(projectId);
+    } finally {
+      setIsBatchProcessing(false);
+    }
+  }
 
   async function handleSaveMemory() {
     if (!selected || !isMemory(selected)) return;
@@ -628,23 +771,11 @@ export default function Page() {
           </button>
         </div>
 
-        {/* Runtime Overview Card */}
-        <div className="px-6 pb-4">
-          <div className="bg-surface rounded-[7px] p-3.5 border border-subtle flex flex-col gap-2 shadow-inner">
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-secondary font-medium">Runtime</span>
-              <span className="font-mono text-accent text-[11px]">{health?.runtime ?? "..."}</span>
-            </div>
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-secondary font-medium">Organizer</span>
-              <span className="font-mono text-accent text-[11px]">{health?.hasOllama ? "Ollama" : "Fallback"}</span>
-            </div>
-            <div className="flex justify-between items-center text-xs pt-2.5 border-t border-subtle/60">
-              <span className="text-secondary font-medium">Pending Approvals</span>
-              <span className={`font-mono font-bold text-xs ${pendingApprovals.length > 0 ? "text-warning" : "text-muted"}`}>
-                {pendingApprovals.length}
-              </span>
-            </div>
+        {/* Runtime status — slim, status-only */}
+        <div className="px-6 pb-3">
+          <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-widest text-muted">
+            <span className={`inline-block w-1.5 h-1.5 rounded-full ${health?.hasOllama ? "bg-success" : "bg-warning"} animate-pulse`} />
+            <span>{health?.hasOllama ? "Ollama online" : "Fallback mode"}</span>
           </div>
         </div>
 
@@ -653,6 +784,8 @@ export default function Page() {
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeView === item.key;
+            const badgeCount = item.badge === "approvals" ? pendingApprovals.length : 0;
+            const showBadge = badgeCount > 0;
             return (
               <div key={item.key} className="relative w-full">
                 <AnimatePresence initial={false}>
@@ -664,14 +797,19 @@ export default function Page() {
                     />
                   )}
                 </AnimatePresence>
-                
+
                 <button
                   onClick={() => { setActiveView(item.key); setIsMobileMenuOpen(false); }}
                   className={`w-full relative z-10 flex items-center gap-3 px-3 py-2.5 rounded-[7px] transition-all text-xs font-medium cursor-pointer
                     ${isActive ? "text-accent" : "text-secondary hover:text-primary hover:bg-surface-hover/40"}`}
                 >
                   <Icon size={14} className={isActive ? "text-accent" : "text-muted"} />
-                  {item.label}
+                  <span className="flex-1 text-left">{item.label}</span>
+                  {showBadge && (
+                    <span className="ml-auto min-w-[18px] h-[18px] px-1.5 rounded-full flex items-center justify-center text-[10px] font-mono font-bold bg-warning/20 text-warning border border-warning/40">
+                      {badgeCount}
+                    </span>
+                  )}
                 </button>
               </div>
             );
@@ -800,7 +938,7 @@ export default function Page() {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder={`Search ${activeView === "overview" ? "activities" : activeView}...`}
+                placeholder={`Search ${activeView === "overview" ? "activities" : activeView === "brain" ? "nodes" : activeView}...`}
                 className="bg-input border border-subtle rounded-[7px] py-1.5 pl-9 pr-14 text-xs w-48 lg:w-64 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent-dim/30 transition-all font-sans text-primary placeholder-muted"
               />
               <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] font-mono text-muted bg-surface-hover border border-subtle px-1.5 py-0.5 rounded leading-none pointer-events-none">
@@ -879,6 +1017,29 @@ export default function Page() {
               className="h-full"
             >
               
+              {/* BRAIN MAP */}
+              {activeView === "brain" && (
+                <div className="h-[calc(100vh-9rem)]">
+                  <BrainMap
+                    categories={overview?.categories ?? []}
+                    memories={memories}
+                    onSelectCategory={(cat) => {
+                      setActiveCategoryFolder(cat);
+                      setActiveView("memories");
+                    }}
+                    onMergeDuplicates={async (group) => {
+                      const target = group.map((g) => g.toLowerCase()).sort((a, b) => a.length - b.length)[0]!;
+                      try {
+                        await api.mergeCategories(projectId, group, target);
+                        await refreshAll(projectId);
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : "Merge failed");
+                      }
+                    }}
+                  />
+                </div>
+              )}
+
               {/* OVERVIEW */}
               {activeView === "overview" && overview && (
                 <div className="space-y-8">
@@ -1170,76 +1331,191 @@ export default function Page() {
               )}
 
 
-              {/* PROPOSALS (PR style Terminal list) */}
+              {/* REVIEW QUEUE (Proposals) */}
               {activeView === "proposals" && (
                 <div className="space-y-4">
-                  {filteredProposals.map((proposal) => (
-                    <motion.div
-                      key={proposal.id}
-                      layoutId={`card-${proposal.id}`}
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      className="bg-surface border border-subtle rounded-[7px] overflow-hidden flex items-stretch shadow-sm group hover:border-medium transition-all"
-                    >
-                      <button 
-                        className="flex-1 text-left p-5 hover:bg-surface-hover/30 transition-colors cursor-pointer"
-                        onClick={() => setSelected(proposal)}
-                      >
-                        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-3">
-                          <h3 className="font-bold text-xs uppercase tracking-wider text-primary group-hover:text-accent transition-colors flex items-center gap-2">
-                            <span className="font-mono text-muted text-[10px] tracking-normal">[PR-{proposal.id.slice(0, 5)}]</span>
-                            {proposal.summary}
-                          </h3>
-                          <span className={`text-[9px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-[4px] border shrink-0 sm:self-center self-start
-                            ${proposal.status === 'staged' ? 'bg-warning/10 text-warning border-warning/20' :
-                              proposal.status === 'applied' ? 'bg-success/10 text-success border-success/20' :
-                              'bg-danger/10 text-danger border-danger/20'
-                            }`}
-                          >
-                            {proposal.status}
+                  {/* Status filter tabs */}
+                  <div className="flex items-center gap-1 border-b border-subtle pb-2">
+                    {(["staged", "applied", "rejected", "failed", "all"] as const).map((tab) => {
+                      const isActive = proposalStatusFilter === tab;
+                      const count = proposalStatusCounts[tab];
+                      const tabColor =
+                        tab === "staged" ? "text-warning" :
+                        tab === "applied" ? "text-success" :
+                        tab === "rejected" ? "text-danger" :
+                        tab === "failed" ? "text-danger" : "text-secondary";
+                      return (
+                        <button
+                          key={tab}
+                          onClick={() => { setProposalStatusFilter(tab); setSelectedProposalIds(new Set()); }}
+                          className={`px-3 py-1.5 rounded-[6px] text-[11px] font-bold uppercase tracking-widest cursor-pointer transition-all
+                            ${isActive ? "bg-surface border border-medium text-primary" : "border border-transparent text-muted hover:text-secondary hover:bg-surface-hover/30"}`}
+                        >
+                          {tab}
+                          <span className={`ml-2 font-mono text-[10px] ${isActive ? tabColor : "text-muted"}`}>
+                            {count}
                           </span>
-                        </div>
-                        
-                        <blockquote className="text-xs text-secondary pl-3 border-l border-subtle/80 italic mb-4 font-sans max-w-2xl truncate">
-                          "{proposal.rationale}"
-                        </blockquote>
+                        </button>
+                      );
+                    })}
+                  </div>
 
-                        <div className="text-[10px] text-muted font-mono flex flex-wrap gap-4 items-center pt-2 border-t border-subtle/40">
-                          <span className="text-accent flex items-center gap-1">
-                            <FileCode size={11} /> {proposal.operations.length} staged operation{proposal.operations.length !== 1 ? 's' : ''}
-                          </span>
-                          <span>•</span>
-                          <span>Updated: {formatDate(proposal.updatedAt)}</span>
-                        </div>
-                      </button>
-                      
-                      {/* Direct PR Action Panel inside Collapsed state (Hoverable details) */}
-                      {proposal.status === "staged" && (
-                        <div className="w-36 border-l border-subtle flex flex-col shrink-0 bg-surface">
-                          <button
-                            disabled={busyProposalId === proposal.id}
-                            onClick={() => void onApprove(proposal.id)}
-                            className="flex-1 flex items-center justify-center gap-1.5 text-[11px] font-bold text-success hover:bg-success/15 disabled:opacity-30 transition-colors border-b border-subtle cursor-pointer"
-                          >
-                            <CheckCircle2 size={13} /> Approve
-                          </button>
-                          <button
-                            disabled={busyProposalId === proposal.id}
-                            onClick={() => void onReject(proposal.id)}
-                            className="flex-1 flex items-center justify-center gap-1.5 text-[11px] font-bold text-danger hover:bg-danger/15 disabled:opacity-30 transition-colors cursor-pointer"
-                          >
-                            <XCircle size={13} /> Reject
-                          </button>
-                        </div>
-                      )}
+                  {/* Batch action bar */}
+                  {selectedProposalIds.size > 0 && proposalStatusFilter === "staged" && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="flex items-center justify-between rounded-[7px] px-4 py-2.5 border border-accent/40 bg-accent-dim"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-[11px] font-bold text-accent uppercase tracking-widest">
+                          {selectedProposalIds.size} selected
+                        </span>
+                        <button
+                          onClick={() => setSelectedProposalIds(new Set())}
+                          className="text-[10px] font-mono text-muted hover:text-secondary cursor-pointer"
+                        >
+                          clear
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          disabled={isBatchProcessing}
+                          onClick={() => void handleBatchReject()}
+                          className="px-3 py-1.5 rounded-[5px] text-[11px] font-bold uppercase tracking-wider text-danger bg-danger/10 hover:bg-danger/20 border border-danger/30 cursor-pointer flex items-center gap-1.5 disabled:opacity-40"
+                        >
+                          <XCircle size={11} />
+                          Reject all
+                        </button>
+                        <button
+                          disabled={isBatchProcessing}
+                          onClick={() => void handleBatchApprove()}
+                          className="px-3 py-1.5 rounded-[5px] text-[11px] font-bold uppercase tracking-wider bg-success text-[#0c0f16] hover:bg-success/90 cursor-pointer flex items-center gap-1.5 disabled:opacity-40"
+                        >
+                          <CheckCircle2 size={11} />
+                          {isBatchProcessing ? "Processing…" : "Approve all"}
+                        </button>
+                      </div>
                     </motion.div>
-                  ))}
-                  {filteredProposals.length === 0 && (
-                    <div className="py-16 text-center text-muted">
-                      <HelpCircle size={28} className="mx-auto mb-2 opacity-30" />
-                      <p className="text-xs font-mono">No proposals match search query.</p>
+                  )}
+
+                  {/* Select-all row (staged only) */}
+                  {proposalStatusFilter === "staged" && filteredProposals.length > 0 && (
+                    <div className="flex items-center gap-2 px-1 text-[10px] font-mono uppercase tracking-widest text-muted">
+                      <input
+                        type="checkbox"
+                        checked={selectedProposalIds.size === filteredProposals.length && filteredProposals.length > 0}
+                        onChange={(e) => {
+                          if (e.target.checked) setSelectedProposalIds(new Set(filteredProposals.map((p) => p.id)));
+                          else setSelectedProposalIds(new Set());
+                        }}
+                        className="accent-accent cursor-pointer"
+                      />
+                      <span>Select all visible</span>
                     </div>
                   )}
+
+                  {/* Proposal cards */}
+                  <div className="space-y-3">
+                    {filteredProposals.map((proposal) => {
+                      const isSelected = selectedProposalIds.has(proposal.id);
+                      const opsByType = proposal.operations.reduce((acc, op) => {
+                        acc[op.type] = (acc[op.type] ?? 0) + 1;
+                        return acc;
+                      }, {} as Record<string, number>);
+                      return (
+                        <motion.div
+                          key={proposal.id}
+                          layoutId={`card-${proposal.id}`}
+                          initial={{ opacity: 0, y: 5 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className={`bg-surface border rounded-[7px] p-4 flex gap-4 shadow-sm group transition-all
+                            ${isSelected ? "border-accent/60 bg-accent-dim/30" : "border-subtle hover:border-medium"}`}
+                        >
+                          {proposal.status === "staged" && (
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {
+                                setSelectedProposalIds((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(proposal.id)) next.delete(proposal.id);
+                                  else next.add(proposal.id);
+                                  return next;
+                                });
+                              }}
+                              className="mt-1 accent-accent cursor-pointer shrink-0"
+                            />
+                          )}
+
+                          <button
+                            className="flex-1 text-left cursor-pointer min-w-0"
+                            onClick={() => setSelected(proposal)}
+                          >
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className={`text-[9px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-[4px] border
+                                ${proposal.status === 'staged' ? 'bg-warning/10 text-warning border-warning/20' :
+                                  proposal.status === 'applied' ? 'bg-success/10 text-success border-success/20' :
+                                  'bg-danger/10 text-danger border-danger/20'
+                                }`}
+                              >
+                                {proposal.status}
+                              </span>
+                              <span className="text-[10px] text-muted font-mono">{formatDate(proposal.updatedAt)}</span>
+                            </div>
+
+                            <h3 className="font-bold text-sm text-primary mb-1.5 group-hover:text-accent transition-colors leading-snug">
+                              {humanizeProposalTitle(proposal)}
+                            </h3>
+
+                            <p className="text-xs text-secondary font-sans line-clamp-1 mb-3 opacity-80">
+                              {proposal.rationale}
+                            </p>
+
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {Object.entries(opsByType).map(([type, count]) => (
+                                <span
+                                  key={type}
+                                  className="text-[10px] font-mono text-muted bg-background border border-subtle px-2 py-0.5 rounded-[4px]"
+                                >
+                                  {count} {type.replace(/_/g, " ")}
+                                </span>
+                              ))}
+                            </div>
+                          </button>
+
+                          {proposal.status === "staged" && (
+                            <div className="flex flex-col gap-2 shrink-0 w-28 border-l border-subtle pl-4 justify-center">
+                              <button
+                                disabled={busyProposalId === proposal.id}
+                                onClick={() => void onApprove(proposal.id)}
+                                className="flex items-center justify-center gap-1.5 text-xs font-bold text-[#0c0f16] bg-success hover:bg-success/90 rounded-[5px] py-1.5 px-3 disabled:opacity-30 transition-colors cursor-pointer"
+                              >
+                                <CheckCircle2 size={13} /> Approve
+                              </button>
+                              <button
+                                disabled={busyProposalId === proposal.id}
+                                onClick={() => void onReject(proposal.id)}
+                                className="flex items-center justify-center gap-1.5 text-xs font-bold text-danger bg-danger/10 hover:bg-danger/20 border border-transparent hover:border-danger/30 rounded-[5px] py-1.5 px-3 disabled:opacity-30 transition-colors cursor-pointer"
+                              >
+                                <XCircle size={13} /> Reject
+                              </button>
+                            </div>
+                          )}
+                        </motion.div>
+                      );
+                    })}
+                    {filteredProposals.length === 0 && (
+                      <div className="py-16 text-center text-muted">
+                        <HelpCircle size={28} className="mx-auto mb-2 opacity-30" />
+                        <p className="text-xs font-mono">
+                          {proposalStatusFilter === "staged"
+                            ? "No proposals waiting for review. Inbox zero."
+                            : `No ${proposalStatusFilter} proposals.`}
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -1302,48 +1578,34 @@ export default function Page() {
                 </div>
               )}
 
-              {/* DOCUMENTS & SKILLS (Folder Architecture layout) */}
-              {(activeView === "documents" || activeView === "skills") && (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-y-6 gap-x-4">
-                  {(activeView === "documents" ? filteredDocuments : filteredSkills).map((item) => {
-                    const isDocItem = activeView === "documents";
-                    return (
-                      <div key={item.id} className="relative pt-3.5 group">
-                        
-                        {/* Custom Folder Tab */}
-                        <div className="absolute top-0 left-4 h-4 px-3 bg-surface border-t border-x border-subtle rounded-t-[5px] text-[8px] font-mono text-muted uppercase tracking-widest flex items-center font-bold z-10 transition-colors group-hover:border-medium">
-                          {isDocItem ? "doc" : "skill"}
-                        </div>
+              {/* AGENTS — per-agent .md tabs */}
+              {activeView === "documents" && (
+                <AgentsView
+                  documents={documents}
+                  canonicalAgents={CANONICAL_AGENTS as unknown as string[]}
+                  activeAgentTab={activeAgentTab}
+                  setActiveAgentTab={(t) => { setActiveAgentTab(t); setAgentDraftDirty(false); setRegenPreview(null); }}
+                  agentDraft={agentDraft}
+                  setAgentDraft={(v) => { setAgentDraft(v); setAgentDraftDirty(true); }}
+                  agentDraftDirty={agentDraftDirty}
+                  isRegenerating={isRegenerating}
+                  isSavingAgent={isSavingAgent}
+                  regenPreview={regenPreview}
+                  onRegenerate={() => void handleRegenerateAgent()}
+                  onAcceptRegen={() => { if (regenPreview) { setAgentDraft(regenPreview); setAgentDraftDirty(true); setRegenPreview(null); } }}
+                  onDiscardRegen={() => setRegenPreview(null)}
+                  onSave={() => void handleSaveAgentDraft()}
+                  onRevert={() => { const doc = documents.find((d) => d.filename === activeAgentTab); setAgentDraft(doc?.content ?? ""); setAgentDraftDirty(false); setRegenPreview(null); }}
+                />
+              )}
 
-                        {/* Folder Body */}
-                        <motion.div
-                          layoutId={`card-${item.id}`}
-                          onClick={() => setSelected(item as Inspectable)}
-                          className="w-full text-left bg-surface border border-subtle rounded-[7px] rounded-tl-none p-5 hover:border-medium hover:bg-surface-hover/30 transition-all flex items-start gap-4 cursor-pointer relative"
-                        >
-                          <div className="w-9 h-9 rounded-[7px] bg-accent-dim text-accent flex items-center justify-center shrink-0 border border-accent/20 group-hover:shadow-[0_0_12px_rgba(99,199,214,0.18)] transition-shadow">
-                            {isDocItem ? <BookText size={15} /> : <Bot size={15} />}
-                          </div>
-                          
-                          <div className="min-w-0 flex-1">
-                            <div className="font-bold text-xs text-primary truncate">
-                              {"filename" in item ? item.filename : item.title}
-                            </div>
-                            <div className="text-[9px] text-muted font-mono truncate mt-1.5" title={item.path}>
-                              {item.path}
-                            </div>
-                          </div>
-                        </motion.div>
-                      </div>
-                    );
-                  })}
-                  {(activeView === "documents" ? filteredDocuments : filteredSkills).length === 0 && (
-                    <div className="col-span-full py-16 text-center text-muted">
-                      <HelpCircle size={28} className="mx-auto mb-2 opacity-30" />
-                      <p className="text-xs font-mono">No items match search query.</p>
-                    </div>
-                  )}
-                </div>
+              {/* SKILLS */}
+              {activeView === "skills" && (
+                <SkillsView
+                  skills={filteredSkills}
+                  projectId={projectId}
+                  onPick={(s) => setSelected(s as Inspectable)}
+                />
               )}
 
               {/* ACTIVITY */}

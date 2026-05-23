@@ -7,6 +7,8 @@ import { importLegacyProjectMemory } from "./legacy-import.js";
 import { createMastraRuntime } from "./mastra/index.js";
 import { RomemStore } from "./store.js";
 import { applyProposal } from "./apply-proposal.js";
+import { getOrganizerModel } from "./mastra/model.js";
+import { createOrganizerAgent } from "./mastra/agents/organizer-agent.js";
 
 export async function createRomemApp(rootDir: string) {
   const projectId = process.env.ROMEM_PROJECT_ID || "romem";
@@ -222,6 +224,26 @@ export async function createRomemApp(rootDir: string) {
     }
   });
 
+  app.post("/api/projects/:id/categories/merge", (req, res) => {
+    const { sources, target } = req.body;
+    if (!Array.isArray(sources) || sources.length < 2) {
+      res.status(400).json({ error: "Provide at least two source categories to merge." });
+      return;
+    }
+    const cleanSources = sources.filter((s): s is string => typeof s === "string" && s.trim().length > 0);
+    const cleanTarget = typeof target === "string" && target.trim().length > 0 ? target.trim() : cleanSources[0];
+    if (!cleanTarget) {
+      res.status(400).json({ error: "Target category name is required." });
+      return;
+    }
+    try {
+      store.mergeCategories(req.params.id, cleanSources, cleanTarget);
+      res.json({ success: true, target: cleanTarget, mergedFrom: cleanSources.filter((s) => s !== cleanTarget) });
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
 
   app.get("/api/projects/:id/proposals", (req, res) => {
     res.json(store.listProposals(req.params.id));
@@ -231,8 +253,137 @@ export async function createRomemApp(rootDir: string) {
     res.json(store.listAgentDocuments(req.params.id));
   });
 
+  app.post("/api/projects/:id/agent-files/regenerate", async (req, res) => {
+    const filename = typeof req.body?.filename === "string" ? req.body.filename : null;
+    if (!filename || !/^[A-Z]+\.md$/.test(filename)) {
+      res.status(400).json({ error: "filename must be a canonical agent doc (e.g. CLAUDE.md)." });
+      return;
+    }
+    const pid = req.params.id;
+    const memories = store.listMemories(pid);
+    if (memories.length === 0) {
+      res.status(400).json({ error: "No memories to consolidate yet." });
+      return;
+    }
+    const model = getOrganizerModel({
+      baseURL: store.getSetting("ollama_base_url"),
+      model: store.getSetting("ollama_model"),
+      apiKey: store.getSetting("ollama_api_key"),
+    });
+    if (!model) {
+      res.status(503).json({ error: "Ollama not configured." });
+      return;
+    }
+    const agent = createOrganizerAgent(model, {});
+    if (!agent) {
+      res.status(503).json({ error: "Could not create organizer agent." });
+      return;
+    }
+    const agentName = filename.replace(/\.md$/, "").toLowerCase();
+    const byCategory = new Map<string, typeof memories>();
+    for (const m of memories) {
+      const cat = m.category || "general";
+      if (!byCategory.has(cat)) byCategory.set(cat, []);
+      byCategory.get(cat)!.push(m);
+    }
+    const grouped = Array.from(byCategory.entries())
+      .map(([cat, list]) => `## ${cat}\n${list.map((m) => `- ${m.fact}`).join("\n")}`)
+      .join("\n\n");
+
+    try {
+      const response = await agent.generate(
+        [
+          `You are generating the contents of ${filename}, the canonical instruction file for the ${agentName} coding agent on this project.`,
+          ``,
+          `STRICT REQUIREMENTS:`,
+          `- Output ONLY the raw markdown content of the file. No JSON, no code fences, no preamble.`,
+          `- Produce ONE consolidated document. Do NOT split into multiple files or suggest per-function .md files.`,
+          `- Organize content into clear top-level sections (## headings) covering: project purpose, architecture, conventions, gotchas, agent-specific guidance.`,
+          `- Be concise. Prefer a single authoritative paragraph per topic over fragmented bullet dumps.`,
+          `- Preserve all hard facts from the source memories below — do not invent details not present.`,
+          ``,
+          `Source memories grouped by category:`,
+          ``,
+          grouped,
+        ].join("\n"),
+        { activeTools: [], maxSteps: 1 },
+      );
+      const content = (response.text ?? "").trim();
+      if (!content) {
+        res.status(500).json({ error: "Model returned empty output." });
+        return;
+      }
+      res.json({ filename, content });
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : "Regenerate failed" });
+    }
+  });
+
   app.get("/api/projects/:id/skills", (req, res) => {
     res.json(store.listSkills(req.params.id));
+  });
+
+  app.post("/api/projects/:id/skills/suggest", async (req, res) => {
+    const pid = req.params.id;
+    const memories = store.listMemories(pid);
+    const existingSkills = store.listSkills(pid).map((s) => s.path);
+    if (memories.length < 3) {
+      res.json({ suggestions: [] });
+      return;
+    }
+    const model = getOrganizerModel({
+      baseURL: store.getSetting("ollama_base_url"),
+      model: store.getSetting("ollama_model"),
+      apiKey: store.getSetting("ollama_api_key"),
+    });
+    if (!model) {
+      res.json({ suggestions: [] });
+      return;
+    }
+    const agent = createOrganizerAgent(model, {});
+    if (!agent) {
+      res.json({ suggestions: [] });
+      return;
+    }
+    try {
+      const response = await agent.generate(
+        [
+          `You are reviewing project memories to suggest REUSABLE SKILLS that should be codified for future AI agent sessions.`,
+          ``,
+          `Output ONLY a JSON array — no prose, no code fences. Each item: { "title": string, "path": string, "rationale": string }.`,
+          `- title: short, action-oriented (e.g. "Migrate provider tables")`,
+          `- path: kebab-case folder name (e.g. "skills/migrate-provider-tables/SKILL.md")`,
+          `- rationale: 1-sentence why this pattern is worth codifying`,
+          ``,
+          `Rules: suggest max 5. Only suggest patterns that recur or are non-obvious. Skip one-off bug fixes.`,
+          `Do NOT duplicate existing skills: ${existingSkills.join(", ") || "(none)"}`,
+          ``,
+          `Memories:`,
+          memories.slice(0, 50).map((m) => `[${m.category}] ${m.fact}`).join("\n"),
+        ].join("\n"),
+        { activeTools: [], maxSteps: 1 },
+      );
+      const text = (response.text ?? "").trim();
+      const jsonStart = text.indexOf("[");
+      const jsonEnd = text.lastIndexOf("]");
+      if (jsonStart === -1 || jsonEnd === -1) {
+        res.json({ suggestions: [] });
+        return;
+      }
+      try {
+        const parsed = JSON.parse(text.slice(jsonStart, jsonEnd + 1));
+        const suggestions = Array.isArray(parsed)
+          ? parsed
+              .filter((s) => s && typeof s.title === "string" && typeof s.path === "string")
+              .slice(0, 5)
+          : [];
+        res.json({ suggestions });
+      } catch {
+        res.json({ suggestions: [] });
+      }
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : "Suggest failed" });
+    }
   });
 
   app.put("/api/projects/:id/memories/:memoryId", (req, res) => {

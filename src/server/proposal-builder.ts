@@ -7,8 +7,17 @@ function pickAgentDocFilename(input: string) {
   const lower = input.toLowerCase();
   if (lower.includes("claude")) return "CLAUDE.md";
   if (lower.includes("gemini")) return "GEMINI.md";
+  if (lower.includes("codex")) return "CODEX.md";
   if (lower.includes("agent")) return "AGENTS.md";
   return "AGENTS.md";
+}
+
+const CANONICAL_AGENT_DOCS = new Set(["CLAUDE.md", "GEMINI.md", "AGENTS.md", "CODEX.md"]);
+
+function canonicaliseAgentDocFilename(raw: string): string {
+  const base = raw.split("/").pop() ?? raw;
+  if (CANONICAL_AGENT_DOCS.has(base)) return base;
+  return pickAgentDocFilename(raw);
 }
 
 function existingDocument(snapshot: ProjectSnapshot, filename: string) {
@@ -98,15 +107,25 @@ export async function buildProposalOperations(
     });
   }
 
+  const dedupedDocs = new Map<string, { content: string; existed: boolean }>();
   for (const document of draft.agentDocuments) {
-    const existing = snapshot.agentDocuments.find((item) => item.filename === document.filename);
+    const canonical = canonicaliseAgentDocFilename(document.filename);
+    const existing = snapshot.agentDocuments.find((item) => item.filename === canonical);
+    const prior = dedupedDocs.get(canonical);
+    const mergedContent = prior
+      ? `${prior.content.trimEnd()}\n\n${document.content.trimStart()}`
+      : document.content;
+    dedupedDocs.set(canonical, { content: mergedContent, existed: Boolean(existing) });
+  }
+
+  for (const [filename, { content, existed }] of dedupedDocs.entries()) {
     operations.push(
       await buildDocumentOperation(
         rootDir,
-        document.filename,
-        `Sync ${document.filename}`,
-        document.content,
-        existing ? "update_agent_document" : "create_agent_document",
+        filename,
+        `Sync ${filename}`,
+        content,
+        existed ? "update_agent_document" : "create_agent_document",
       ),
     );
   }

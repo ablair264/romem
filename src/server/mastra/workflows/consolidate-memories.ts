@@ -146,8 +146,8 @@ export function createConsolidateMemoriesWorkflow(
                 draft = {
                   summary: typeof parsed.summary === "string" && parsed.summary.trim() ? parsed.summary : "Memory consolidation updates.",
                   rationale: typeof parsed.rationale === "string" && parsed.rationale.trim() ? parsed.rationale : "Memory consolidation proposal.",
-                  deletes: Array.isArray(parsed.deletes) ? parsed.deletes : [],
-                  merges: Array.isArray(parsed.merges) ? parsed.merges : [],
+                  deletes: Array.isArray(parsed.deletes) ? parsed.deletes.filter((d: any) => typeof d === 'object' && d !== null && d.id) : [],
+                  merges: Array.isArray(parsed.merges) ? parsed.merges.filter((m: any) => typeof m === 'object' && m !== null && Array.isArray(m.deleteIds) && m.newFact) : [],
                 };
                 skipped = false;
               }
