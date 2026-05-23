@@ -21,6 +21,7 @@ export type TaskSummaryInput = z.infer<typeof TaskSummaryInputSchema>;
 
 export const ProposalOperationTypeSchema = z.enum([
   "upsert_memory",
+  "delete_memory",
   "create_todo",
   "update_agent_document",
   "create_agent_document",

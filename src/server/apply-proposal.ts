@@ -15,6 +15,9 @@ export async function applyProposal(rootDir: string, store: RomemStore, proposal
           `proposal:${proposal.id}`,
         );
         break;
+      case "delete_memory":
+        store.deleteMemory(proposal.projectId, operation.target);
+        break;
       case "create_todo":
         store.createTodo(proposal.projectId, operation.target, proposal.taskSummaryId);
         break;

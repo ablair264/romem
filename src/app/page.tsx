@@ -101,8 +101,10 @@ export default function Page() {
   const [editSettings, setEditSettings] = useState<Record<string, string>>({});
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
-  const [connectData, setConnectData] = useState<{ projectId: string; serverUrl: string; endpoint: string; snippets: Record<string, string> } | null>(null);
-  const [activeConnectTab, setActiveConnectTab] = useState<"claude_md" | "claude_code_hook" | "codex_hook" | "gemini_hook" | "curl">("claude_md");
+  const [connectData, setConnectData] = useState<{ projectId: string; serverUrl: string; endpoint: string; contextUrl: string; snippets: Record<string, string> } | null>(null);
+  const [activeConnectTab, setActiveConnectTab] = useState<"context_load" | "claude_md" | "claude_code_hook" | "codex_hook" | "gemini_hook" | "curl">("context_load");
+  const [isConsolidating, setIsConsolidating] = useState(false);
+  const [consolidationMessage, setConsolidationMessage] = useState<string | null>(null);
   const [copiedSnippetId, setCopiedSnippetId] = useState<string | null>(null);
   const [isProjectSwitcherOpen, setIsProjectSwitcherOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -520,6 +522,28 @@ export default function Page() {
     }
   }
 
+  async function handleConsolidate() {
+    setIsConsolidating(true);
+    setConsolidationMessage(null);
+    try {
+      const result = await api.consolidate(projectId);
+      if (result.skipped) {
+        setConsolidationMessage("No consolidation needed — memories look clean.");
+      } else if (result.proposalId) {
+        setConsolidationMessage(`Proposal staged: ${result.deletedCount} deletions, ${result.mergedCount} merges. Check the Proposals tab.`);
+        await refreshAll();
+        setActiveView("proposals");
+      } else {
+        setConsolidationMessage("Nothing to consolidate.");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Consolidation failed.");
+    } finally {
+      setIsConsolidating(false);
+      setTimeout(() => setConsolidationMessage(null), 5000);
+    }
+  }
+
   async function handleCreateProject(e: React.FormEvent) {
     e.preventDefault();
     if (!newProjectId.trim()) return;
@@ -932,15 +956,32 @@ export default function Page() {
                           Select a category folder to browse sync history, or create a new custom folder.
                         </p>
                         
-                        {/* Inline folder creation indicator */}
-                        {!isAddFolderOpen && (
+                        {/* Folder + consolidate controls */}
+                        <div className="flex items-center gap-2">
+                          {consolidationMessage && (
+                            <span className="text-[10px] font-mono text-accent animate-fade-in">{consolidationMessage}</span>
+                          )}
                           <button
-                            onClick={() => setIsAddFolderOpen(true)}
-                            className="h-8 px-4 rounded-[7px] border border-subtle bg-input hover:border-accent text-xs font-bold text-secondary hover:text-accent transition-all cursor-pointer flex items-center gap-1.5"
+                            onClick={() => void handleConsolidate()}
+                            disabled={isConsolidating}
+                            className="h-8 px-3.5 rounded-[7px] border border-subtle bg-input hover:border-accent/60 text-xs font-bold text-secondary hover:text-accent transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                            title="Ask the organizer model to find and merge duplicate memories"
                           >
-                            <span>+ Create Folder</span>
+                            {isConsolidating ? (
+                              <><RefreshCw size={11} className="animate-spin" /> Consolidating...</>
+                            ) : (
+                              <><Sparkles size={11} /> Consolidate</>
+                            )}
                           </button>
-                        )}
+                          {!isAddFolderOpen && (
+                            <button
+                              onClick={() => setIsAddFolderOpen(true)}
+                              className="h-8 px-4 rounded-[7px] border border-subtle bg-input hover:border-accent text-xs font-bold text-secondary hover:text-accent transition-all cursor-pointer flex items-center gap-1.5"
+                            >
+                              <span>+ Create Folder</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       {/* Custom Category Folders Grid */}
@@ -1447,8 +1488,9 @@ export default function Page() {
                     <div className="bg-surface border border-subtle rounded-[7px] overflow-hidden">
                       {/* Tab Bar */}
                       <div className="flex border-b border-subtle bg-surface-hover/30 overflow-x-auto">
-                        {(["claude_md", "claude_code_hook", "codex_hook", "gemini_hook", "curl"] as const).map((tab) => {
+                        {(["context_load", "claude_md", "claude_code_hook", "codex_hook", "gemini_hook", "curl"] as const).map((tab) => {
                           const labels: Record<string, string> = {
+                            context_load: "Load Context",
                             claude_md: "Prompt Snippet",
                             claude_code_hook: "Claude Code",
                             codex_hook: "Codex",
@@ -1473,6 +1515,7 @@ export default function Page() {
                       {/* Snippet label and copy button */}
                       <div className="px-5 py-3 flex justify-between items-center border-b border-subtle/60">
                         <span className="text-[10px] font-mono text-muted uppercase tracking-widest">
+                          {activeConnectTab === "context_load" && "Add to CLAUDE.md / AGENTS.md / GEMINI.md"}
                           {activeConnectTab === "claude_md" && "Add to CLAUDE.md / AGENTS.md / GEMINI.md"}
                           {activeConnectTab === "claude_code_hook" && "Add to .claude/settings.json"}
                           {activeConnectTab === "codex_hook" && "Add to .codex/hooks.json"}
