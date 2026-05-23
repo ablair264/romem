@@ -47,7 +47,7 @@ export type ProposalOperation = z.infer<typeof ProposalOperationSchema>;
 
 export const ProposalDraftSchema = z.object({
   summary: z.string().min(1),
-  rationale: z.string().min(1),
+  rationale: z.string(),
   categories: z.array(z.string()).default([]),
   tags: z.array(z.string()).default([]),
   memories: z

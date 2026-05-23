@@ -104,6 +104,16 @@ export function createIngestTaskSummaryWorkflow(
       try {
         const response = await agent.generate(
           [
+            "You are to review the following task summary and project snapshot, then generate a detailed proposal draft.",
+            "",
+            "CRITICAL INSTRUCTIONS FOR YOUR STRUCTURED OUTPUT:",
+            "1. 'summary': Write a concise, high-level summary of the proposed changes.",
+            "2. 'rationale': You MUST provide a clear, detailed rationale explaining why these memories, todos, and document/skill updates are proposed and how they benefit the project. Do NOT leave this field empty.",
+            "3. 'memories': Add important facts, architecture decisions, or gotchas learned from the task summary. Keep them clear and factual.",
+            "4. 'todos': Extract any pending action items or todos mentioned in the task summary.",
+            "5. 'agentDocuments': Propose updates to agent documentation (like CLAUDE.md or AGENTS.md) if there are documentation impacts.",
+            "6. 'skills': Propose additions or modifications to skills if there are skills impacts.",
+            "",
             "Task summary:",
             JSON.stringify(inputData.taskSummary, null, 2),
             "",
@@ -160,7 +170,7 @@ export function createIngestTaskSummaryWorkflow(
         inputData.taskSummary.projectId,
         inputData.taskSummaryRecordId,
         inputData.draft.summary,
-        inputData.draft.rationale,
+        inputData.draft.rationale.trim() || "Proposal generated based on the task summary changes.",
         inputData.draft.categories,
         inputData.draft.tags,
         operations,
